@@ -151,8 +151,7 @@ bool DCIo::removeDir(const std::string &path) {
     return fs_rmdir(path.c_str()) == 0;
 }
 
-size_t DCIo::read(const std::string &file, char **out, size_t size, size_t offset) {
-
+size_t DCIo::read(const std::string &file, char *out, size_t size, const size_t offset) {
     file_t fd;
     size_t file_size;
     size_t read_size;
@@ -160,7 +159,6 @@ size_t DCIo::read(const std::string &file, char **out, size_t size, size_t offse
     fd = fs_open(file.c_str(), O_RDONLY);
     if (fd == FILEHND_INVALID) {
         printf("DCIo::read: can't open %s\n", file.c_str());
-        *out = nullptr;
         return -1;
     }
 
@@ -178,12 +176,9 @@ size_t DCIo::read(const std::string &file, char **out, size_t size, size_t offse
         fs_seek(fd, offset, SEEK_SET);
     }
 
-    *out = (char *) malloc(size);
-    read_size = fs_read(fd, *out, size);
+    read_size = fs_read(fd, out, size);
     if (read_size != size) {
         fs_close(fd);
-        free(*out);
-        *out = nullptr;
         printf("DCIo::read: can't read %s\n", file.c_str());
         return -1;
     }
@@ -270,15 +265,14 @@ std::vector<Io::File> DCIo::getDirList(const std::string &path, bool sort, bool 
     return files;
 }
 
-Io::File DCIo::findFile(const std::string &path,
-                        const std::vector<std::string> &whitelist, const std::string &blacklist) {
-
-    File file;
+std::vector<Io::File> DCIo::findFiles(const std::string &path, const std::vector<std::string> &whitelist,
+                                         const std::string &blacklist, bool stopOnFirst) {
+    std::vector<Io::File> files{};
     dirent_t *ent;
     file_t fd;
 
     if (path.empty()) {
-        return file;
+        return files;
     }
 
     if ((fd = fs_open(path.c_str(), O_RDONLY | O_DIR)) != FILEHND_INVALID) {
@@ -288,18 +282,22 @@ Io::File DCIo::findFile(const std::string &path,
                     if (!blacklist.empty() && Utility::contains(ent->name, blacklist)) {
                         continue;
                     }
+
+                    File file;
                     file.name = ent->name;
                     file.path = Utility::removeLastSlash(path) + "/" + file.name;
                     file.type = ent->attr == O_DIR ? Type::Directory : Type::File;
                     file.size = ent->size;
-                    break;
+                    files.emplace_back(file);
+
+                    if (stopOnFirst) break;
                 }
             }
         }
         fs_close(fd);
     }
 
-    return file;
+    return files;
 }
 
 bool DCIo::copy(const std::string &src, const std::string &dst,

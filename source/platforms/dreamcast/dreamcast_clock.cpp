@@ -8,12 +8,11 @@
 using namespace c2d;
 
 DCClock::DCClock() : Clock() {
-
     m_startTime = getCurrentTime();
 }
 
 Time DCClock::getCurrentTime() const {
 
-    uint64 time = timer_us_gettime64();
+    const uint64_t time = timer_us_gettime64();
     return microseconds(time);
 }

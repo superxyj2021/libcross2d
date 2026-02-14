@@ -131,8 +131,8 @@ std::string Option::getString() const {
         snprintf(str, 127, "%i, %i, %i, %i",
                  (int) floatRect.left, (int) floatRect.top, (int) floatRect.width, (int) floatRect.height);
         return std::string(str);
-    } else if (type == Type::Choice) {
-        return choices[choices_index];
+    } else if (type == Type::Array) {
+        return array_index < (int) array.size() ? array[array_index] : "";
     }
 #else
     if (type == Type::Integer) {

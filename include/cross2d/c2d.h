@@ -283,6 +283,7 @@ extern c2d::Renderer *c2d_renderer;
 
 #elif __DREAMCAST__
 
+#undef BIT
 #include <kos.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
