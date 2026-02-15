@@ -52,6 +52,9 @@ namespace c2d {
 
         virtual void setClearColor(const Color &color);
 
+        // SDL2 only
+        virtual void setFullscreen(bool value) {}
+
         Color getClearColor() const;
 
         Time getDeltaTime() const;

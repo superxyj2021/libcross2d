@@ -67,6 +67,10 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
 #else
     int w = (int) getSize().x, h = (int) getSize().y;
 #endif
+
+    // update viewport
+    glViewport(0, 0, w, h);
+
     // projection
     auto projectionMatrix = glm::orthoLH(0.0f, (float) w, (float) h, 0.0f, 0.0f, 1.0f);
     // view

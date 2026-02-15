@@ -21,6 +21,8 @@ namespace c2d {
 
         SDL_GLContext getContext();
 
+        void setFullscreen(bool value) override;
+
     private:
 
         static void exitCallback();

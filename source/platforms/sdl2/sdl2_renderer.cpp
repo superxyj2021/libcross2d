@@ -119,6 +119,17 @@ SDL2Renderer::SDL2Renderer(const Vector2f &s) : GLRenderer(s) {
            (int) m_size.x, (int) m_size.y, display.x, display.y);
 }
 
+void SDL2Renderer::setFullscreen(const bool value) {
+    if (!value) return;
+
+    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+
+    // update render size
+    int w, h = 0;
+    SDL_GetWindowSize(window, &w, &h);
+    SDL2Renderer::setSize((float) w, (float) h);
+}
+
 void SDL2Renderer::flip(bool draw, bool inputs) {
     // call base class (draw childs)
     GLRenderer::flip(draw, inputs);
