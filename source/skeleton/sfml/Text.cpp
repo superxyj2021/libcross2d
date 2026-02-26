@@ -28,6 +28,8 @@
 #include <cmath>
 #include "cross2d/c2d.h"
 #include "cross2d/skeleton/sfml/Utf.hpp"
+#include <codecvt>
+#include <locale>
 
 using namespace c2d;
 
@@ -262,57 +264,6 @@ namespace c2d {
 
 
 ////////////////////////////////////////////////////////////
-    Vector2f Text::findCharacterPos(std::size_t index) const {
-        // Make sure that we have a valid font
-        if (m_font == nullptr)
-            return {};
-
-        // Precompute the variables needed by the algorithm
-        bool bold = (m_style & Bold) != 0;
-        auto hspace = static_cast<float>(m_font->getGlyph(L' ', m_characterSize, bold).advance);
-        auto vspace = static_cast<float>(m_font->getLineSpacing(m_characterSize)) + (float) m_line_spacing;
-
-        // Compute the position
-        Vector2f position;
-        uint32_t prevChar = 0;
-        
-        // Iterate through UTF-8 characters
-        auto it = m_string.begin();
-        auto end = m_string.end();
-        std::size_t currentIndex = 0;
-        
-        while (it < end && currentIndex < index) {
-            Uint32 curChar = 0;
-            it = Utf<8>::decode(it, end, curChar);
-            currentIndex++;
-
-            // Apply the kerning offset
-            position.x += static_cast<float>(m_font->getKerning(prevChar, curChar, m_characterSize, bold));
-            prevChar = curChar;
-
-            // Handle special characters
-            switch (curChar) {
-                case ' ':
-                    position.x += hspace;
-                    continue;
-                case '\t':
-                    position.x += hspace * 4;
-                    continue;
-                case '\n':
-                    position.y += vspace;
-                    position.x = 0;
-                    continue;
-            }
-
-            // For regular characters, add the advance offset of the glyph
-            position.x += static_cast<float>(m_font->getGlyph(curChar, m_characterSize, bold).advance);
-        }
-
-        // Transform the position to global coordinates
-        position = getTransform().transformPoint(position);
-
-        return position;
-    }
 
 
 ////////////////////////////////////////////////////////////
@@ -457,222 +408,298 @@ namespace c2d {
     }
 
 ////////////////////////////////////////////////////////////
-    void Text::ensureGeometryUpdate() const {
-        // Do nothing, if geometry has not changed
-        if (!m_geometryNeedUpdate) return;
+Vector2f Text::findCharacterPos(std::size_t index) const {
+    // Make sure that we have a valid font
+    if (m_font == nullptr)
+        return {};
 
-        // Mark geometry as updated
-        m_geometryNeedUpdate = false;
+    // Convert UTF-8 string to UTF-32 for proper character indexing
+	    // Convert UTF-8 to UTF-32
+    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
+    std::u32string utf32String = converter.from_bytes(m_string);
 
-        // No font or text: nothing to draw
-        if (!m_font || m_string.empty()) return;
+    // Adjust the index if it's out of range
+    if (index > utf32String.length())
+        index = utf32String.length();
 
-        // Clear the previous geometry
-        m_vertices.clear();
-        m_outlineVertices.clear();
-        m_bounds = FloatRect();
+    // Precompute the variables needed by the algorithm
+    bool bold = (m_style & Bold) != 0;
+    auto hspace = static_cast<float>(m_font->getGlyph(U' ', m_characterSize, bold).advance);
+    auto vspace = static_cast<float>(m_font->getLineSpacing(m_characterSize)) + (float)m_line_spacing;
 
-        // Compute values related to the text style
-        bool bold = m_style & Bold;
-        bool underlined = m_style & Underlined;
-        bool strikeThrough = m_style & StrikeThrough;
-        float italic = (m_style & Italic) != 0u ? 0.208f : 0.f; // 12 degrees
-        float underlineOffset = m_font->getUnderlinePosition(m_characterSize);
-        float underlineThickness = m_font->getUnderlineThickness(m_characterSize);
+    // Compute the position
+    Vector2f position;
+    uint32_t prevChar = 0;
+    for (std::size_t i = 0; i < index; ++i) {
+        uint32_t curChar = utf32String[i];
 
-        // Compute the location of the strike through dynamically
-        // We use the center point of the lowercase 'x' glyph as the reference
-        // We reuse the underline thickness as the thickness of the strike through as well
-        FloatRect xBounds = m_font->getGlyph(L'x', m_characterSize, bold).bounds;
-        float strikeThroughOffset = xBounds.top + xBounds.height / 2.f;
+        // Apply the kerning offset
+        position.x += static_cast<float>(m_font->getKerning(prevChar, curChar, m_characterSize, bold));
+        prevChar = curChar;
 
-        // Precompute the variables needed by the algorithm
-        auto hspace = static_cast<float>(m_font->getGlyph(L' ', m_characterSize, bold).advance);
-        auto vspace = static_cast<float>(m_font->getLineSpacing(m_characterSize)) + (float) m_line_spacing;
-
-        float x = 0.f;
-        auto y = static_cast<float>(m_characterSize);
-
-        // fix top not at 0 if needed (font->setOffset)
-        // TODO: find a better fix
-        float scale = (float) m_characterSize / (float) C2D_DEFAULT_CHAR_SIZE;
-        x += m_font->getOffset().x * scale;
-        y += m_font->getOffset().y * scale;
-
-        // Create one quad for each character
-        auto minX = static_cast<float>(m_characterSize);
-        auto minY = static_cast<float>(m_characterSize);
-        float maxX = 0.f;
-        float maxY = 0.f;
-        uint32_t prevChar = 0;
-
-        std::vector<std::string> words = Utility::split(m_string, " ");
-        for (size_t i = 0; i < words.size(); i++) {
-            // handle maxSize.x in NewLine mode
-            if (m_overflow == NewLine && m_max_size.x > 0) {
-#if 0
-                // calculate word width (approximated width for speed)
-                // edit: not precise enough...
-                auto width = (float) (words[i].size() * m_characterSize);
-#else
-                float width = 0;
-                // Decode UTF-8 to calculate word width correctly
-                auto wordIt = words[i].begin();
-                auto wordEnd = words[i].end();
-                while (wordIt < wordEnd) {
-                    Uint32 codepoint = 0;
-                    wordIt = Utf<8>::decode(wordIt, wordEnd, codepoint);
-                    const Glyph &g = m_font->getGlyph(codepoint, m_characterSize, bold, m_outlineThickness);
-                    width += g.bounds.width;
-                }
-#endif
-                if ((x + width) * getScale().x > m_max_size.x) {
-                    y += vspace;
-                    x = 0;
-                }
-            }
-
-            // add space back
-            if (i != words.size() - 1) {
-                words[i] += " ";
-            }
-
-            // Decode UTF-8 characters properly
-            auto it = words[i].begin();
-            auto end = words[i].end();
-            while (it < end) {
-                Uint32 curChar = 0;
-                it = Utf<8>::decode(it, end, curChar);
-
-                // Apply the kerning offset
-                x += m_font->getKerning(prevChar, curChar, m_characterSize, bold);
-                prevChar = curChar;
-
-                // handle maxSize.x
-                if (m_max_size.x > 0 && x * getScale().x > m_max_size.x) {
-                    break;
-                }
-
-                // handle maxSize.y
-                if (m_max_size.y > 0 && y * getScale().y > m_max_size.y + 1) {
-                    break;
-                }
-
-                // If we're using the underlined style and there's a new line, draw a line
-                if (underlined && (curChar == L'\n')) {
-                    addLine(m_vertices, m_textureSize, x, y,
-                            m_fillColor, underlineOffset, underlineThickness);
-
-                    if (m_outlineThickness != 0)
-                        addLine(m_outlineVertices, m_textureSize, x, y,
-                                m_outlineColor, underlineOffset, underlineThickness, m_outlineThickness);
-                }
-
-                // If we're using the strike through style and there's a new line, draw a line across all characters
-                if (strikeThrough && (curChar == L'\n')) {
-                    addLine(m_vertices, m_textureSize, x, y,
-                            m_fillColor, strikeThroughOffset, underlineThickness);
-
-                    if (m_outlineThickness != 0)
-                        addLine(m_outlineVertices, m_textureSize, x, y,
-                                m_outlineColor, strikeThroughOffset, underlineThickness, m_outlineThickness);
-                }
-
-                // Handle special characters
-                if ((curChar == L' ') || (curChar == L'\t') || (curChar == L'\n')) {
-                    // Update the current bounds (min coordinates)
-                    minX = std::min(minX, x);
-                    minY = std::min(minY, y);
-                    switch (curChar) {
-                        case L' ':
-                            x += hspace;
-                            break;
-                        case L'\t':
-                            x += hspace * 4;
-                            break;
-                        case '\n':
-                            y += vspace;
-                            x = 0;
-                            break;
-                    }
-
-                    // Update the current bounds (max coordinates)
-                    maxX = std::max(maxX, x);
-                    maxY = std::max(maxY, y);
-
-                    // Next glyph, no need to create a quad for whitespace
-                    continue;
-                }
-
-                // Apply the outline
-                if (m_outlineThickness != 0) {
-                    const Glyph &glyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
-
-                    float left = glyph.bounds.left;
-                    float top = glyph.bounds.top;
-                    float right = glyph.bounds.left + glyph.bounds.width;
-                    float bottom = glyph.bounds.top + glyph.bounds.height;
-
-                    // Add the outline glyph to the vertices
-                    addGlyphQuad(m_outlineVertices, m_textureSize, {x, y}, m_outlineColor, glyph, italic);
-
-                    // Update the current bounds with the outlined glyph bounds
-                    minX = std::min(minX, x + left - italic * bottom);
-                    maxX = std::max(maxX, x + right - italic * top);
-                    minY = std::min(minY, y + top);
-                    maxY = std::max(maxY, y + bottom);
-                }
-
-                // Extract the current glyph's description
-                const Glyph &glyph = m_font->getGlyph(curChar, m_characterSize, bold);
-
-                // Add the glyph to the vertices
-                addGlyphQuad(m_vertices, m_textureSize, {x, y}, m_fillColor, glyph, italic);
-
-                // Update the current bounds with the non outlined glyph bounds
-                if (m_outlineThickness == 0) {
-                    float left = glyph.bounds.left;
-                    float top = glyph.bounds.top;
-                    float right = glyph.bounds.left + glyph.bounds.width;
-                    float bottom = glyph.bounds.top + glyph.bounds.height;
-
-                    minX = std::min(minX, x + left - italic * bottom);
-                    maxX = std::max(maxX, x + right - italic * top);
-                    minY = std::min(minY, y + top);
-                    maxY = std::max(maxY, y + bottom);
-                }
-
-                // Advance to the next character
-                x += glyph.advance;
-            }
-
-            // If we're using the underlined style, add the last line
-            if (underlined && (x > 0)) {
-                addLine(m_vertices, m_textureSize, x, y,
-                        m_fillColor, underlineOffset, underlineThickness);
-                if (m_outlineThickness != 0)
-                    addLine(m_outlineVertices, m_textureSize, x, y,
-                            m_outlineColor, underlineOffset, underlineThickness, m_outlineThickness);
-            }
-
-            // If we're using the strike through style, add the last line across all characters
-            if (strikeThrough && (x > 0)) {
-                addLine(m_vertices, m_textureSize, x, y,
-                        m_fillColor, strikeThroughOffset, underlineThickness);
-                if (m_outlineThickness != 0)
-                    addLine(m_outlineVertices, m_textureSize, x, y,
-                            m_outlineColor, strikeThroughOffset, underlineThickness, m_outlineThickness);
-            }
-
-            // Update the bounding rectangle
-            m_bounds.left = minX;
-            m_bounds.top = minY;
-            m_bounds.width = (maxX - minX) + m_outlineThickness;
-            m_bounds.height = (maxY - minY) + m_outlineThickness;
-            m_size = {m_bounds.width, m_bounds.height};
+        // Handle special characters
+        switch (curChar) {
+            case U' ':
+                position.x += hspace;
+                continue;
+            case U'\t':
+                position.x += hspace * 4;
+                continue;
+            case U'\n':
+                position.y += vspace;
+                position.x = 0;
+                continue;
+            default:
+                break;
         }
 
-        m_vertices.update();
-        m_outlineVertices.update();
+        // For regular characters, add the advance offset of the glyph
+        position.x += static_cast<float>(m_font->getGlyph(curChar, m_characterSize, bold).advance);
     }
+
+    // Transform the position to global coordinates
+    position = getTransform().transformPoint(position);
+
+    return position;
+}
+
+void Text::ensureGeometryUpdate() const {
+    if (!m_geometryNeedUpdate) return;
+    m_geometryNeedUpdate = false;
+
+    if (!m_font || m_string.empty()) return;
+
+    // 清除之前的几何数据
+    m_vertices.clear();
+    m_outlineVertices.clear();
+    m_bounds = FloatRect();
+
+    // 获取样式信息
+    bool bold = m_style & Bold;
+    bool underlined = m_style & Underlined;
+    bool strikeThrough = m_style & StrikeThrough;
+    float italic = (m_style & Italic) ? 0.208f : 0.f;
+    float underlineOffset = m_font->getUnderlinePosition(m_characterSize);
+    float underlineThickness = m_font->getUnderlineThickness(m_characterSize);
+
+    // 计算行高和空格宽度
+    float hspace = static_cast<float>(m_font->getGlyph(U' ', m_characterSize, bold).advance);
+    float vspace = static_cast<float>(m_font->getLineSpacing(m_characterSize)) + m_line_spacing;
+
+    // 初始化位置
+    float x = 0.f;
+    float y = static_cast<float>(m_characterSize);
+    
+    // 应用字体偏移
+    float scale = static_cast<float>(m_characterSize) / C2D_DEFAULT_CHAR_SIZE;
+    x += m_font->getOffset().x * scale;
+    y += m_font->getOffset().y * scale;
+
+    // 边界计算
+    float minX = x, minY = y;
+    float maxX = x, maxY = y;
+    uint32_t prevChar = 0;
+
+    // 转换为UTF-32处理
+    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
+    std::u32string utf32String = converter.from_bytes(m_string);
+    
+    // 判断是否为单行模式，转义下原定义懒得修改后面的代码了
+	bool singleLineMode = m_overflow ? false : true;
+	
+    // 计算可用宽度
+    float availableWidth = std::numeric_limits<float>::max();
+    if (m_max_size.x > 0) availableWidth = m_max_size.x;
+    if (m_bounds.width > 0 && m_bounds.width < availableWidth) availableWidth = m_bounds.width;
+
+    // 预计算省略号宽度
+    const Glyph& ellipsisGlyph = m_font->getGlyph(U'.', m_characterSize, bold);
+    float ellipsisWidth = ellipsisGlyph.advance * 3; // 三个点
+
+    bool truncated = false;
+
+    // 逐字符处理
+    for (size_t i = 0; i < utf32String.size(); ++i) {
+        uint32_t curChar = utf32String[i];
+        
+        // 应用字距调整
+        x += m_font->getKerning(prevChar, curChar, m_characterSize, bold);
+        prevChar = curChar;
+
+        // 处理特殊字符
+        switch (curChar) {
+            case U' ': {
+                float newX = x + hspace;
+                if (!singleLineMode || newX <= availableWidth) {
+                    x = newX;
+                }
+                continue;
+            }
+            case U'\t': {
+                float newX = x + hspace * 4;
+                if (!singleLineMode || newX <= availableWidth) {
+                    x = newX;
+                }
+                continue;
+            }
+            case U'\n':
+                if (singleLineMode) {
+                    // 单行模式下将换行符视为空格
+                    float newX = x + hspace;
+                    if (newX <= availableWidth) {
+                        x = newX;
+                    }
+                } else {
+                    // 多行模式下正常换行
+                    y += vspace;
+                    x = m_font->getOffset().x * scale;
+                    
+                    // 检查是否超出垂直边界
+                    float availableHeight = std::numeric_limits<float>::max();
+                    if (m_max_size.y > 0) availableHeight = m_max_size.y;
+                    if (m_bounds.height > 0 && m_bounds.height < availableHeight) availableHeight = m_bounds.height;
+                    
+                    if (y > availableHeight) {
+                        truncated = true;
+                        goto add_ellipsis;
+                    }
+                }
+                continue;
+            default:
+                break;
+        }
+
+        // 获取当前字符的字形信息
+        const Glyph& glyph = m_font->getGlyph(curChar, m_characterSize, bold);
+        
+        // 检查是否超出水平边界（考虑可能的省略号）
+        float newX = x + glyph.advance;
+        bool willTruncate = (singleLineMode && (newX + ellipsisWidth) > availableWidth) ||
+                           (!singleLineMode && newX > availableWidth);
+
+        if (willTruncate) {
+            if (singleLineMode) {
+                // 单行模式需要检查是否可以添加省略号
+                if ((x + ellipsisWidth) <= availableWidth) {
+                    // 有足够空间添加省略号
+                    truncated = true;
+                    goto add_ellipsis;
+                } else {
+                    // 没有足够空间，直接截断
+                    break;
+                }
+            } else {
+                // 多行模式换行
+                y += vspace;
+                x = m_font->getOffset().x * scale;
+                newX = x + glyph.advance;
+                
+                // 检查是否超出垂直边界
+                float availableHeight = std::numeric_limits<float>::max();
+                if (m_max_size.y > 0) availableHeight = m_max_size.y;
+                if (m_bounds.height > 0 && m_bounds.height < availableHeight) availableHeight = m_bounds.height;
+                
+                if (y > availableHeight) {
+                    truncated = true;
+                    goto add_ellipsis;
+                }
+            }
+        }
+
+        // 添加轮廓(如果有)
+        if (m_outlineThickness != 0) {
+            const Glyph& outlineGlyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
+            addGlyphQuad(m_outlineVertices, m_textureSize, {x, y}, m_outlineColor, outlineGlyph, italic);
+            
+            // 更新带轮廓的边界
+            float left = outlineGlyph.bounds.left - m_outlineThickness;
+            float top = outlineGlyph.bounds.top - m_outlineThickness;
+            float right = outlineGlyph.bounds.left + outlineGlyph.bounds.width + m_outlineThickness;
+            float bottom = outlineGlyph.bounds.top + outlineGlyph.bounds.height + m_outlineThickness;
+            
+            minX = std::min(minX, x + left - italic * bottom);
+            maxX = std::max(maxX, x + right - italic * top);
+            minY = std::min(minY, y + top);
+            maxY = std::max(maxY, y + bottom);
+        }
+
+        // 添加主字形
+        addGlyphQuad(m_vertices, m_textureSize, {x, y}, m_fillColor, glyph, italic);
+
+        // 更新无轮廓的边界
+        float left = glyph.bounds.left;
+        float top = glyph.bounds.top;
+        float right = glyph.bounds.left + glyph.bounds.width;
+        float bottom = glyph.bounds.top + glyph.bounds.height;
+        
+        minX = std::min(minX, x + left - italic * bottom);
+        maxX = std::max(maxX, x + right - italic * top);
+        minY = std::min(minY, y + top);
+        maxY = std::max(maxY, y + bottom);
+        
+        // 移动到下一个字符位置
+        x = newX;
+    }
+
+add_ellipsis:
+    // 如果被截断且是单行模式，添加省略号
+    if (truncated && singleLineMode && (x + ellipsisWidth) <= availableWidth) {
+        // 添加三个点作为省略号
+        for (int i = 0; i < 3; ++i) {
+            const Glyph& dotGlyph = m_font->getGlyph(U'.', m_characterSize, bold);
+            
+            // 添加轮廓
+            if (m_outlineThickness != 0) {
+                const Glyph& outlineDotGlyph = m_font->getGlyph(U'.', m_characterSize, bold, m_outlineThickness);
+                addGlyphQuad(m_outlineVertices, m_textureSize, {x, y}, m_outlineColor, outlineDotGlyph, italic);
+            }
+            
+            // 添加主字形
+            addGlyphQuad(m_vertices, m_textureSize, {x, y}, m_fillColor, dotGlyph, italic);
+            
+            // 更新边界
+            float left = dotGlyph.bounds.left;
+            float top = dotGlyph.bounds.top;
+            float right = dotGlyph.bounds.left + dotGlyph.bounds.width;
+            float bottom = dotGlyph.bounds.top + dotGlyph.bounds.height;
+            
+            minX = std::min(minX, x + left - italic * bottom);
+            maxX = std::max(maxX, x + right - italic * top);
+            minY = std::min(minY, y + top);
+            maxY = std::max(maxY, y + bottom);
+            
+            x += dotGlyph.advance;
+        }
+    }
+
+    // 添加行尾的下划线
+    if (underlined && x > 0) {
+        addLine(m_vertices, m_textureSize, x, y, m_fillColor, underlineOffset, underlineThickness);
+        if (m_outlineThickness != 0) {
+            addLine(m_outlineVertices, m_textureSize, x, y, 
+                   m_outlineColor, underlineOffset, underlineThickness, m_outlineThickness);
+        }
+    }
+    
+    // 添加行尾的删除线
+    if (strikeThrough && x > 0) {
+        FloatRect xBounds = m_font->getGlyph(U'x', m_characterSize, bold).bounds;
+        float strikeThroughOffset = xBounds.top + xBounds.height / 2.f;
+        
+        addLine(m_vertices, m_textureSize, x, y, m_fillColor, strikeThroughOffset, underlineThickness);
+        if (m_outlineThickness != 0) {
+            addLine(m_outlineVertices, m_textureSize, x, y,
+                   m_outlineColor, strikeThroughOffset, underlineThickness, m_outlineThickness);
+        }
+    }
+
+    // 更新最终边界
+    m_bounds = {minX, minY, maxX - minX, maxY - minY};
+    m_size = {m_bounds.width, m_bounds.height};
+
+    m_vertices.update();
+    m_outlineVertices.update();
+}
+
+
 } // namespace sf

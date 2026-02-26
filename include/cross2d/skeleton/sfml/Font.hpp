@@ -329,6 +329,7 @@ namespace c2d {
         Texture::Filter m_filtering = Texture::Filter::Linear;
         Vector2f m_offset;
         std::string m_font_path;
+		std::string m_buff;
     };
 
 } // namespace c2d

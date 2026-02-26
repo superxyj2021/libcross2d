@@ -201,3 +201,40 @@ std::string Utility::getSizeString(size_t size) {
         return output;
     }
 }
+
+int Utility::getCharacterBytes(unsigned char firstByte)
+{
+    if (firstByte <= 0x7F) {
+        return 1;
+    } else if ((firstByte & 0xE0) == 0xC0) {
+        return 2;
+    } else if ((firstByte & 0xF0) == 0xE0) {
+        return 3;
+    } else if ((firstByte & 0xF8) == 0xF0) {
+        return 4;
+    } else if ((firstByte & 0xFC) == 0xF8) {
+        return 5;
+    } else if ((firstByte & 0xFE) == 0xFC) {
+        return 6;
+    }
+    return 0;
+}
+
+int Utility::getCharacterNum(std::string &str)
+{
+    int count = 0;
+
+    for (size_t i = 0; i < str.size(); ) {
+        int bytesToRead = Utility::getCharacterBytes(static_cast<unsigned char>(str[i]));
+        if (bytesToRead < 0)
+        {
+            count++;
+            break;
+        }
+
+        i += bytesToRead;
+        count++;
+    }
+
+    return count;
+}

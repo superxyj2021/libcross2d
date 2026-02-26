@@ -8,13 +8,22 @@
 
 using namespace c2d::config;
 
-Group::Group(const std::string &name, int id) {
+Group::Group(const std::string &name, int id, const std::string &displayname) {
     m_name = name;
     p_id = id;
+	if (displayname.length() == 0) { 
+        m_displayname = name;
+    } else {
+        m_displayname = displayname;
+	}
 }
 
 std::string Group::getName() const {
     return m_name;
+}
+
+std::string Group::getDisplayName() const {
+    return m_displayname;
 }
 
 int Group::getId() const {

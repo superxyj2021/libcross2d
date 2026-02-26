@@ -14,69 +14,88 @@
 using namespace c2d;
 using namespace c2d::config;
 
-Option::Option(const std::string &name, const std::string &value, int id, const std::string &comment) {
+Option::Option(const std::string &name, const std::string &value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setString(value);
     setComment(comment);
     setType(Type::String);
+    setDisplayName(displayname);
 }
 
-Option::Option(const std::string &name, int value, int id, const std::string &comment) {
+Option::Option(const std::string &name, int value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setInteger(value);
     setComment(comment);
     setType(Type::Integer);
+    setDisplayName(displayname);
 }
 
-Option::Option(const std::string &name, float value, int id, const std::string &comment) {
+Option::Option(const std::string &name, float value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setFloat(value);
     setComment(comment);
     setType(Type::Float);
+    setDisplayName(displayname);
 }
 
-Option::Option(const std::string &name, const c2d::Vector2f &value, int id, const std::string &comment) {
+Option::Option(const std::string &name, const c2d::Vector2f &value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setVector2f(value);
     setComment(comment);
     setType(Type::Vector2f);
+    setDisplayName(displayname);
 }
 
-Option::Option(const std::string &name, const c2d::FloatRect &value, int id, const std::string &comment) {
+Option::Option(const std::string &name, const c2d::FloatRect &value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setFloatRect(value);
     setComment(comment);
     setType(Type::FloatRect);
+    setDisplayName(displayname);
 }
 
-Option::Option(const std::string &name, const Color &value, int id, const std::string &comment) {
+Option::Option(const std::string &name, const Color &value, int id, const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setColor(value);
     setComment(comment);
     setType(Type::Color);
+    setDisplayName(displayname);
 }
 
 Option::Option(const std::string &name, const std::vector<std::string> &values, int index, int id,
-               const std::string &comment) {
+               const std::string &comment, const std::string &displayname) {
     setName(name);
     setId(id);
     setArray(values, index);
     setComment(comment);
     setType(Type::Array);
+    setDisplayName(displayname);
 }
 
 std::string Option::getName() const {
     return name;
 }
 
+std::string Option::getDisplayName() const {
+    return displayname;
+}
+
 void Option::setName(const std::string &name) {
     this->name = name;
+}
+
+void Option::setDisplayName(const std::string &displayname) {
+	if (displayname.length() == 0) { 
+        this->displayname = getName();
+    } else {
+        this->displayname = displayname;
+	}   
 }
 
 std::string Option::getComment() const {

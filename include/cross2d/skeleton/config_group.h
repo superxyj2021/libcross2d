@@ -14,9 +14,11 @@
 namespace c2d::config {
     class Group {
     public:
-        explicit Group(const std::string &name = "none", int id = -1);
+        explicit Group(const std::string &name = "none", int id = -1, const std::string &displayname = "");
 
         [[nodiscard]] std::string getName() const;
+
+        [[nodiscard]] std::string getDisplayName() const;
 
         [[nodiscard]] int getId() const;
 
@@ -61,6 +63,7 @@ namespace c2d::config {
 
     private:
         std::string m_name;
+		std::string m_displayname;
         std::vector<Group> m_groups;
         std::vector<Option> m_options;
         int p_id = 0;

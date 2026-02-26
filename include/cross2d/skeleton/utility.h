@@ -52,6 +52,10 @@ namespace c2d {
         static std::string baseName(const std::string &path);
 
         static std::string getSizeString(size_t size);
+
+        static int getCharacterBytes(unsigned char firstByte);
+
+        static int getCharacterNum(std::string &str);
     };
 }
 

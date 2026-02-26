@@ -27,25 +27,25 @@ namespace c2d::config {
 
         /// Constructors
         Option(const std::string &name, const std::string &value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, int value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, float value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, const Vector2f &value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, const FloatRect &value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, const Color &value,
-               int id = -1, const std::string &comment = "");
+               int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         Option(const std::string &name, const std::vector<std::string> &values,
-               int index = 0, int id = -1, const std::string &comment = "");
+               int index = 0, int id = -1, const std::string &comment = "", const std::string &displayname = "");
 
         /// Type::String
         [[nodiscard]] std::string getString() const;
@@ -95,7 +95,11 @@ namespace c2d::config {
         /// ...
         [[nodiscard]] std::string getName() const;
 
+        [[nodiscard]] std::string getDisplayName() const;
+		
         void setName(const std::string &name);
+
+        void setDisplayName(const std::string &displayname);
 
         [[nodiscard]] int getId() const;
 
@@ -125,7 +129,8 @@ namespace c2d::config {
         int array_index = 0;
 
         std::string name{};
-        std::string info{};
+		std::string info{};
+		std::string displayname{};
         Type type{};
         int id = -1;
         unsigned int m_flags = 0;

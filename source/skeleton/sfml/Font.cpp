@@ -25,6 +25,9 @@
 ////////////////////////////////////////////////////////////
 // Headers
 ////////////////////////////////////////////////////////////
+#include <iostream>
+#include <fstream>
+
 #include "cross2d/c2d.h"
 #include "cross2d/skeleton/sfml/Font.hpp"
 
@@ -61,52 +64,23 @@ namespace c2d {
 ////////////////////////////////////////////////////////////
     bool Font::loadFromFile(const std::string &filename) {
 #ifndef __NO_FREETYPE__
-        // Cleanup the previous resources
-        cleanup();
-        m_refCount = new int(1);
-
-        // Initialize FreeType
-        // Note: we initialize FreeType for every font instance in order to avoid having a single
-        // global manager that would create a lot of issues regarding creation and destruction order.
-        FT_Library library;
-        if (FT_Init_FreeType(&library) != 0) {
-            printf("Failed to load font %s (failed to initialize FreeType)\n", filename.c_str());
-            return false;
-        }
-        m_library = library;
-
-        // Load the new font face from the specified file
-        FT_Face face;
-        if (FT_New_Face(static_cast<FT_Library>(m_library), filename.c_str(), 0, &face) != 0) {
-            printf("Failed to load font %s (failed to create the font face)\n", filename.c_str());
+        std::ifstream file;
+        file.open(filename, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
             return false;
         }
 
-        // Load the stroker that will be used to outline the font
-        FT_Stroker stroker;
-        if (FT_Stroker_New(static_cast<FT_Library>(m_library), &stroker) != 0) {
-            printf("Failed to load font %s (failed to create the stroker)\n", filename.c_str());
-            FT_Done_Face(face);
+        std::streampos fileSize = file.tellg();
+        m_buff.resize(static_cast<std::size_t>(fileSize) + 1);
+
+        file.seekg(0, std::ios::beg);
+        if (!file.read(const_cast<char*>(m_buff.c_str()), fileSize)) {
+            file.close();
             return false;
         }
+        file.close();
 
-        // Select the unicode character map
-        if (FT_Select_Charmap(face, FT_ENCODING_UNICODE) != 0) {
-            printf("Failed to load font %s (failed to set the Unicode character set)\n", filename.c_str());
-            FT_Stroker_Done(stroker);
-            FT_Done_Face(face);
-            return false;
-        }
-
-        // Store the loaded font in our ugly void* :)
-        m_stroker = stroker;
-        m_face = face;
-
-        // Store the font information
-        m_info.family = face->family_name ? face->family_name : std::string();
-        m_font_path = filename;
-
-        return true;
+        return loadFromMemory((const void *)m_buff.c_str(), fileSize);
 #else
         return false;
 #endif
