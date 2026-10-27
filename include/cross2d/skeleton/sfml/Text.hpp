@@ -249,6 +249,30 @@ namespace c2d {
         c2d::Font *getFont();
 
         ////////////////////////////////////////////////////////////
+        /// \brief Horizontal scrolling (marquee) support
+        ///
+        /// When scrolling is enabled and the text is wider than its max size,
+        /// the string is drawn with a horizontal scroll offset and clipped to
+        /// the max width instead of being truncated with "...".
+        ////////////////////////////////////////////////////////////
+        void setScrollEnabled(bool enable);
+
+        bool isScrollEnabled() const;
+
+        void setScrollOffset(float offset);
+
+        float getScrollOffset() const;
+
+        /// true when scrolling is enabled and the full text is wider than
+        /// the max width (i.e. the text actually needs scrolling)
+        bool isScrollNeeded() const;
+
+        /// width of the full (unscrolled) text, valid after a geometry build
+        float getScrollFullWidth() const;
+
+        c2d::Vector2f getSizeMax() const;
+
+        ////////////////////////////////////////////////////////////
         /// \brief Get the character size
         ///
         /// \return Size of the characters, in pixels
@@ -406,6 +430,9 @@ namespace c2d {
         int m_line_spacing = 0;
         Origin m_text_origin = Origin::TopLeft;
         mutable Vector2i m_textureSize = {128, 128};
+        bool m_scrollEnabled = false;
+        float m_scrollOffset = 0.f;
+        mutable float m_scrollFullWidth = 0.f;
     };
 
 } // namespace sf

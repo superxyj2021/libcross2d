@@ -74,6 +74,55 @@ namespace {
         vertices.append(Vertex({position.x + right - italic * top, position.y + top}, color, {u2, v1}));
         vertices.append(Vertex({position.x + right - italic * bottom, position.y + bottom}, color, {u2, v2}));
     }
+
+    // Same as addGlyphQuad, but only draws the part of the glyph that lies
+    // inside the horizontal clip range [clipL, clipR] (world coordinates).
+    // used by the marquee scroll mode so that a glyph partially moved outside
+    // the visible area is clipped exactly at the edge instead of being drawn
+    // over the highlight box border. UVs are interpolated proportionally.
+    void addGlyphQuadClipped(c2d::VertexArray &vertices, c2d::Vector2i texSize,
+                             c2d::Vector2f position, const c2d::Color &color,
+                             const c2d::Glyph &glyph, float italic,
+                             float clipL, float clipR) {
+        float padding = 1.0f;
+
+        float left = glyph.bounds.left - padding;
+        float top = glyph.bounds.top - padding;
+        float right = glyph.bounds.left + glyph.bounds.width + padding;
+        float bottom = glyph.bounds.top + glyph.bounds.height + padding;
+
+        float texL = (float) glyph.textureRect.left - padding;
+        float texR = (float) (glyph.textureRect.left + glyph.textureRect.width) + padding;
+        float v1 = ((float) glyph.textureRect.top - padding) / (float) texSize.y;
+        float v2 = ((float) (glyph.textureRect.top + glyph.textureRect.height) + padding) / (float) texSize.y;
+        float texSpan = texR - texL;
+
+        // world x of the quad on the top and bottom edges (italic skews them)
+        float quadL_top = position.x + left - italic * top;
+        float quadR_top = position.x + right - italic * top;
+        float quadL_bottom = position.x + left - italic * bottom;
+        float quadR_bottom = position.x + right - italic * bottom;
+
+        // clip each edge against the visible range
+        float cL_top = std::max(quadL_top, clipL);
+        float cR_top = std::min(quadR_top, clipR);
+        float cL_bottom = std::max(quadL_bottom, clipL);
+        float cR_bottom = std::min(quadR_bottom, clipR);
+        if (cL_top >= cR_top || cL_bottom >= cR_bottom) return; // fully clipped
+
+        // interpolate the u coordinate for the clipped edges
+        float uL_top = (texL + (cL_top - quadL_top) / (quadR_top - quadL_top) * texSpan) / (float) texSize.x;
+        float uR_top = (texL + (cR_top - quadL_top) / (quadR_top - quadL_top) * texSpan) / (float) texSize.x;
+        float uL_bottom = (texL + (cL_bottom - quadL_bottom) / (quadR_bottom - quadL_bottom) * texSpan) / (float) texSize.x;
+        float uR_bottom = (texL + (cR_bottom - quadL_bottom) / (quadR_bottom - quadL_bottom) * texSpan) / (float) texSize.x;
+
+        vertices.append(Vertex({cL_top, position.y + top}, color, {uL_top, v1}));
+        vertices.append(Vertex({cR_top, position.y + top}, color, {uR_top, v1}));
+        vertices.append(Vertex({cL_bottom, position.y + bottom}, color, {uL_bottom, v2}));
+        vertices.append(Vertex({cL_bottom, position.y + bottom}, color, {uL_bottom, v2}));
+        vertices.append(Vertex({cR_top, position.y + top}, color, {uR_top, v1}));
+        vertices.append(Vertex({cR_bottom, position.y + bottom}, color, {uR_bottom, v2}));
+    }
 }
 
 
@@ -157,6 +206,41 @@ namespace c2d {
             m_overflow = overflow;
             m_geometryNeedUpdate = true;
         }
+    }
+
+////////////////////////////////////////////////////////////
+    void Text::setScrollEnabled(bool enable) {
+        if (m_scrollEnabled != enable) {
+            m_scrollEnabled = enable;
+            m_geometryNeedUpdate = true;
+        }
+    }
+
+    bool Text::isScrollEnabled() const {
+        return m_scrollEnabled;
+    }
+
+    void Text::setScrollOffset(float offset) {
+        if (m_scrollOffset != offset) {
+            m_scrollOffset = offset;
+            m_geometryNeedUpdate = true;
+        }
+    }
+
+    float Text::getScrollOffset() const {
+        return m_scrollOffset;
+    }
+
+    bool Text::isScrollNeeded() const {
+        return m_scrollEnabled && m_scrollFullWidth > m_max_size.x;
+    }
+
+    float Text::getScrollFullWidth() const {
+        return m_scrollFullWidth;
+    }
+
+    c2d::Vector2f Text::getSizeMax() const {
+        return m_max_size;
     }
 
 ////////////////////////////////////////////////////////////
@@ -510,7 +594,11 @@ void Text::ensureGeometryUpdate() const {
     // 计算可用宽度
     float availableWidth = std::numeric_limits<float>::max();
     if (m_max_size.x > 0) availableWidth = m_max_size.x;
-    if (m_bounds.width > 0 && m_bounds.width < availableWidth) availableWidth = m_bounds.width;
+    // 滚动模式下可用宽度必须固定为文字自身显示框（sizeMax 宽度），
+    // 不能被上次几何边界 m_bounds 缩小（否则滚动裁剪范围会漂移，
+    // 不再等于其他行"原来文字显示的边框"）。
+    if (!m_scrollEnabled && m_bounds.width > 0 && m_bounds.width < availableWidth)
+        availableWidth = m_bounds.width;
 
     // 预计算省略号宽度
     const Glyph& ellipsisGlyph = m_font->getGlyph(U'.', m_characterSize, bold);
@@ -530,14 +618,15 @@ void Text::ensureGeometryUpdate() const {
         switch (curChar) {
             case U' ': {
                 float newX = x + hspace;
-                if (!singleLineMode || newX <= availableWidth) {
+                // 滚动模式下空格始终生效（否则滚到末尾会缺字符）
+                if (!singleLineMode || m_scrollEnabled || newX <= availableWidth) {
                     x = newX;
                 }
                 continue;
             }
             case U'\t': {
                 float newX = x + hspace * 4;
-                if (!singleLineMode || newX <= availableWidth) {
+                if (!singleLineMode || m_scrollEnabled || newX <= availableWidth) {
                     x = newX;
                 }
                 continue;
@@ -546,7 +635,7 @@ void Text::ensureGeometryUpdate() const {
                 if (singleLineMode) {
                     // 单行模式下将换行符视为空格
                     float newX = x + hspace;
-                    if (newX <= availableWidth) {
+                    if (m_scrollEnabled || newX <= availableWidth) {
                         x = newX;
                     }
                 } else {
@@ -574,8 +663,11 @@ void Text::ensureGeometryUpdate() const {
         
         // 检查是否超出水平边界（考虑可能的省略号）
         float newX = x + glyph.advance;
-        bool willTruncate = (singleLineMode && (newX + ellipsisWidth) > availableWidth) ||
-                           (!singleLineMode && newX > availableWidth);
+        // 滚动模式下不做省略号截断（整行字符都参与滚动）
+        bool willTruncate = m_scrollEnabled
+                            ? (!singleLineMode && newX > availableWidth)
+                            : ((singleLineMode && (newX + ellipsisWidth) > availableWidth) ||
+                               (!singleLineMode && newX > availableWidth));
 
         if (willTruncate) {
             if (singleLineMode) {
@@ -606,44 +698,72 @@ void Text::ensureGeometryUpdate() const {
             }
         }
 
-        // 添加轮廓(如果有)
-        if (m_outlineThickness != 0) {
-            const Glyph& outlineGlyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
-            addGlyphQuad(m_outlineVertices, m_textureSize, {x, y}, m_outlineColor, outlineGlyph, italic);
-            
-            // 更新带轮廓的边界
-            float left = outlineGlyph.bounds.left - m_outlineThickness;
-            float top = outlineGlyph.bounds.top - m_outlineThickness;
-            float right = outlineGlyph.bounds.left + outlineGlyph.bounds.width + m_outlineThickness;
-            float bottom = outlineGlyph.bounds.top + outlineGlyph.bounds.height + m_outlineThickness;
-            
-            minX = std::min(minX, x + left - italic * bottom);
-            maxX = std::max(maxX, x + right - italic * top);
+        // 滚动模式下对字形应用水平偏移；完全位于可视区外的字形跳过，
+        // 部分出界的字形用 addGlyphQuadClipped 精确裁剪到 [0, availableWidth]
+        // （以文本/高亮框的左右边界为准），避免字符画出框外。
+        float drawX = x;
+        bool skipGlyph = false;
+        bool partialClip = false;
+        if (m_scrollEnabled && singleLineMode) {
+            drawX = x - m_scrollOffset;
+            skipGlyph = (drawX + glyph.bounds.width <= 0) || (drawX >= availableWidth);
+            partialClip = !skipGlyph && (drawX + glyph.bounds.left < 0 ||
+                                         drawX + glyph.bounds.left + glyph.bounds.width > availableWidth);
+        }
+
+        if (!skipGlyph) {
+            // 添加轮廓(如果有)
+            if (m_outlineThickness != 0) {
+                const Glyph& outlineGlyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
+                if (partialClip) {
+                    addGlyphQuadClipped(m_outlineVertices, m_textureSize, {drawX, y},
+                                        m_outlineColor, outlineGlyph, italic, 0.f, availableWidth);
+                } else {
+                    addGlyphQuad(m_outlineVertices, m_textureSize, {drawX, y}, m_outlineColor, outlineGlyph, italic);
+                }
+
+                // 更新带轮廓的边界
+                float left = outlineGlyph.bounds.left - m_outlineThickness;
+                float top = outlineGlyph.bounds.top - m_outlineThickness;
+                float right = outlineGlyph.bounds.left + outlineGlyph.bounds.width + m_outlineThickness;
+                float bottom = outlineGlyph.bounds.top + outlineGlyph.bounds.height + m_outlineThickness;
+
+                minX = std::min(minX, drawX + left - italic * bottom);
+                maxX = std::max(maxX, drawX + right - italic * top);
+                minY = std::min(minY, y + top);
+                maxY = std::max(maxY, y + bottom);
+            }
+
+            // 添加主字形
+            if (partialClip) {
+                addGlyphQuadClipped(m_vertices, m_textureSize, {drawX, y},
+                                    m_fillColor, glyph, italic, 0.f, availableWidth);
+            } else {
+                addGlyphQuad(m_vertices, m_textureSize, {drawX, y}, m_fillColor, glyph, italic);
+            }
+
+            // 更新无轮廓的边界
+            float left = glyph.bounds.left;
+            float top = glyph.bounds.top;
+            float right = glyph.bounds.left + glyph.bounds.width;
+            float bottom = glyph.bounds.top + glyph.bounds.height;
+
+            minX = std::min(minX, drawX + left - italic * bottom);
+            maxX = std::max(maxX, drawX + right - italic * top);
             minY = std::min(minY, y + top);
             maxY = std::max(maxY, y + bottom);
         }
 
-        // 添加主字形
-        addGlyphQuad(m_vertices, m_textureSize, {x, y}, m_fillColor, glyph, italic);
-
-        // 更新无轮廓的边界
-        float left = glyph.bounds.left;
-        float top = glyph.bounds.top;
-        float right = glyph.bounds.left + glyph.bounds.width;
-        float bottom = glyph.bounds.top + glyph.bounds.height;
-        
-        minX = std::min(minX, x + left - italic * bottom);
-        maxX = std::max(maxX, x + right - italic * top);
-        minY = std::min(minY, y + top);
-        maxY = std::max(maxY, y + bottom);
-        
         // 移动到下一个字符位置
         x = newX;
     }
 
+    // 滚动模式下记录整行完整宽度（未滚动前所有字符的总宽度）
+    m_scrollFullWidth = (m_scrollEnabled && singleLineMode) ? x : 0.f;
+
 add_ellipsis:
     // 如果被截断且是单行模式，添加省略号
-    if (truncated && singleLineMode && (x + ellipsisWidth) <= availableWidth) {
+    if (!m_scrollEnabled && truncated && singleLineMode && (x + ellipsisWidth) <= availableWidth) {
         // 添加三个点作为省略号
         for (int i = 0; i < 3; ++i) {
             const Glyph& dotGlyph = m_font->getGlyph(U'.', m_characterSize, bold);
