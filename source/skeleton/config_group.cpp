@@ -345,6 +345,7 @@ void Group::copy(Group *group) {
     if (!group) return;
 
     group->m_name = m_name;
+    group->m_displayname = m_displayname;
     group->m_groups = m_groups;
     group->m_options = m_options;
     group->p_id = p_id;
