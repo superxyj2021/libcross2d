@@ -27,6 +27,7 @@
 ////////////////////////////////////////////////////////////
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
 
 #include "cross2d/c2d.h"
 #include "cross2d/skeleton/sfml/Font.hpp"
@@ -282,6 +283,60 @@ namespace c2d {
 #else
         return 0;
 #endif
+    }
+
+
+////////////////////////////////////////////////////////////
+    void Font::precacheText(const std::string &text, unsigned int characterSize,
+                            bool bold, float outlineThickness) const {
+        if (text.empty()) {
+            return;
+        }
+
+        // Iterate over UTF-8 code points manually: std::wstring_convert is
+        // not reliably available on every toolchain (e.g. some devkitPro
+        // libstdc++ builds), so we decode UTF-8 ourselves.
+        std::unordered_set<uint32_t> seen;
+        for (size_t i = 0; i < text.size();) {
+            unsigned char c = (unsigned char) text[i];
+            uint32_t cp = 0;
+            size_t n = 1;
+            if (c < 0x80) {
+                cp = c;
+            } else if ((c & 0xE0) == 0xC0) {
+                cp = c & 0x1F;
+                n = 2;
+            } else if ((c & 0xF0) == 0xE0) {
+                cp = c & 0x0F;
+                n = 3;
+            } else if ((c & 0xF8) == 0xF0) {
+                cp = c & 0x07;
+                n = 4;
+            } else {
+                // invalid leading byte, skip it
+                i++;
+                continue;
+            }
+
+            if (i + n > text.size()) {
+                break; // truncated sequence at the end
+            }
+            for (size_t k = 1; k < n; k++) {
+                cp = (cp << 6) | ((unsigned char) text[i + k] & 0x3F);
+            }
+            i += n;
+
+            // skip control/whitespace characters, they carry no glyph pixels
+            if (cp == U' ' || cp == U'\t' || cp == U'\n' || cp == U'\r') {
+                continue;
+            }
+            // only rasterize each unique character once (getGlyph is cached,
+            // but deduplicating avoids the map lookup + findGlyphRect scans)
+            if (!seen.insert(cp).second) {
+                continue;
+            }
+            getGlyph(cp, characterSize, bold, outlineThickness);
+        }
     }
 
 
@@ -656,7 +711,12 @@ namespace c2d {
 
     Font::Page::Page() : nextRow(3) {
         //printf("Font:: create new tex\n");
-        texture = new C2DTexture({128, 128}, Texture::Format::RGBA8);
+        // Start the glyph atlas at 512x512 instead of 128x128: with large
+        // Chinese fonts a rom list easily needs thousands of glyphs, and
+        // every resize() uploads the whole texture again (glTexImage2D).
+        // Starting bigger means 512->1024->2048 (2 resizes) instead of
+        // 128->...->2048 (5 resizes) during the first frame.
+        texture = new C2DTexture({512, 512}, Texture::Format::RGBA8);
 
         // Reserve a 2x2 white square for texturing underlines
         uint8_t *buffer;

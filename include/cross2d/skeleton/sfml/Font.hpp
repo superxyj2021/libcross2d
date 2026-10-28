@@ -234,6 +234,26 @@ namespace c2d {
             return false;
         }
 
+        ////////////////////////////////////////////////////////////
+        /// \brief Pre-rasterize the glyphs of a text so the first draw
+        ///        doesn't have to load (potentially thousands of) CJK
+        ///        glyphs in one frame.
+        ///
+        /// Only the characters not yet in the cache are rasterized, so
+        /// calling this with the union of all strings that will be drawn
+        /// (e.g. all rom names before the rom list is shown) builds the
+        /// whole glyph atlas up-front and removes the first-frame stalls
+        /// / glitches caused by the (much larger) Chinese fonts.
+        ///
+        /// \param text             UTF-8 text whose characters must be cached
+        /// \param characterSize    Reference character size
+        /// \param bold             Cache the bold version or the regular one?
+        /// \param outlineThickness Thickness of outline (when != 0 the glyph will not be filled)
+        ///
+        ////////////////////////////////////////////////////////////
+        virtual void precacheText(const std::string &text, unsigned int characterSize,
+                                  bool bold, float outlineThickness = 0.f) const;
+
     private:
 
         ////////////////////////////////////////////////////////////

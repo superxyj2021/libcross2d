@@ -28,12 +28,48 @@
 #include <cmath>
 #include "cross2d/c2d.h"
 #include "cross2d/skeleton/sfml/Utf.hpp"
-#include <codecvt>
 #include <locale>
 
 using namespace c2d;
 
 namespace {
+
+    // Convert an UTF-8 string to UTF-32 without relying on the deprecated
+    // std::wstring_convert (removed on newer toolchains, e.g. GCC 16+).
+    std::u32string utf8ToUtf32(const std::string &text) {
+        std::u32string out;
+        out.reserve(text.size());
+        for (size_t i = 0; i < text.size();) {
+            unsigned char c = (unsigned char) text[i];
+            uint32_t cp = 0;
+            size_t n = 1;
+            if (c < 0x80) {
+                cp = c;
+            } else if ((c & 0xE0) == 0xC0) {
+                cp = c & 0x1F;
+                n = 2;
+            } else if ((c & 0xF0) == 0xE0) {
+                cp = c & 0x0F;
+                n = 3;
+            } else if ((c & 0xF8) == 0xF0) {
+                cp = c & 0x07;
+                n = 4;
+            } else {
+                // invalid leading byte, skip it
+                i++;
+                continue;
+            }
+            if (i + n > text.size()) {
+                break; // truncated sequence at the end
+            }
+            for (size_t k = 1; k < n; k++) {
+                cp = (cp << 6) | ((unsigned char) text[i + k] & 0x3F);
+            }
+            i += n;
+            out.push_back((char32_t) cp);
+        }
+        return out;
+    }
 
     // Add an underline or strikethrough line to the vertex array
     void addLine(c2d::VertexArray &vertices, c2d::Vector2i texSize,
@@ -499,8 +535,7 @@ Vector2f Text::findCharacterPos(std::size_t index) const {
 
     // Convert UTF-8 string to UTF-32 for proper character indexing
 	    // Convert UTF-8 to UTF-32
-    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-    std::u32string utf32String = converter.from_bytes(m_string);
+    std::u32string utf32String = utf8ToUtf32(m_string);
 
     // Adjust the index if it's out of range
     if (index > utf32String.length())
@@ -585,8 +620,7 @@ void Text::ensureGeometryUpdate() const {
     uint32_t prevChar = 0;
 
     // 转换为UTF-32处理
-    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-    std::u32string utf32String = converter.from_bytes(m_string);
+    std::u32string utf32String = utf8ToUtf32(m_string);
     
     // 判断是否为单行模式，转义下原定义懒得修改后面的代码了
 	bool singleLineMode = m_overflow ? false : true;
