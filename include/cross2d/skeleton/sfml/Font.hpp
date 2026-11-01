@@ -28,6 +28,7 @@
 ////////////////////////////////////////////////////////////
 // Headers
 ////////////////////////////////////////////////////////////
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -218,7 +219,7 @@ namespace c2d {
         /// \return Texture containing the glyphs of the requested size
         ///
         ////////////////////////////////////////////////////////////
-        virtual Texture *getTexture(unsigned int characterSize);
+        virtual Texture *getTexture(unsigned int characterSize, unsigned int page = 0);
 
         virtual void setFilter(Texture::Filter filter);
 
@@ -333,7 +334,7 @@ namespace c2d {
         ////////////////////////////////////////////////////////////
         // Types
         ////////////////////////////////////////////////////////////
-        typedef std::map<unsigned int, Page> PageTable; ///< Table mapping a character size to its page (texture)
+        typedef std::map<unsigned int, std::deque<Page>> PageTable; ///< Table mapping a character size to its atlas pages (deque: push_back keeps references to existing pages stable)
 
         ////////////////////////////////////////////////////////////
         // Member data

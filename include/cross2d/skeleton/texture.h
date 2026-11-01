@@ -42,6 +42,12 @@ namespace c2d {
 
         virtual void setFilter(Filter filter) { m_filter = filter; };
 
+        // keep the CPU-side pixel buffer after the initial GPU upload.
+        // static textures (skin/cover images) don't need it once uploaded,
+        // so the renderer may free it to save memory; lock() reallocates
+        // on demand if the texture is later modified.
+        virtual void setKeepCpuBuffer(bool keep) { m_keepCpuBuffer = keep; };
+
         virtual void applyShader() {
         };
 
@@ -71,6 +77,7 @@ namespace c2d {
         Filter m_filter = Filter::Linear;
         ShaderList::Shader *m_shader = nullptr;
         uint8_t *m_pixels = nullptr;
+        bool m_keepCpuBuffer = true;
 
     protected:
         void toPot(int w, int h);

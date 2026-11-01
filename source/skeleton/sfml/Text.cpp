@@ -174,8 +174,6 @@ namespace c2d {
             m_fillColor(255, 255, 255),
             m_outlineColor(0, 0, 0),
             m_outlineThickness(0),
-            m_vertices(Triangles),
-            m_outlineVertices(Triangles),
             m_bounds(),
             m_geometryNeedUpdate(false) {
         type = Type::Text;
@@ -191,8 +189,6 @@ namespace c2d {
             m_fillColor(255, 255, 255),
             m_outlineColor(0, 0, 0),
             m_outlineThickness(0),
-            m_vertices(Triangles),
-            m_outlineVertices(Triangles),
             m_bounds(),
             m_geometryNeedUpdate(true) {
         type = Type::Text;
@@ -285,10 +281,12 @@ namespace c2d {
             m_fillColor = color;
 
             if (!m_geometryNeedUpdate) {
-                for (std::size_t i = 0; i < m_vertices.getVertexCount(); ++i) {
-                    m_vertices[i].color = m_fillColor;
+                for (auto &page: m_textPages) {
+                    for (std::size_t i = 0; i < page.vertices.getVertexCount(); ++i) {
+                        page.vertices[i].color = m_fillColor;
+                    }
+                    page.vertices.update();
                 }
-                m_vertices.update();
             }
         }
     }
@@ -299,10 +297,12 @@ namespace c2d {
             m_outlineColor = color;
 
             if (!m_geometryNeedUpdate) {
-                for (std::size_t i = 0; i < m_outlineVertices.getVertexCount(); ++i) {
-                    m_outlineVertices[i].color = m_outlineColor;
+                for (auto &page: m_textPages) {
+                    for (std::size_t i = 0; i < page.outlineVertices.getVertexCount(); ++i) {
+                        page.outlineVertices[i].color = m_outlineColor;
+                    }
+                    page.outlineVertices.update();
                 }
-                m_outlineVertices.update();
             }
         }
     }
@@ -519,10 +519,20 @@ namespace c2d {
 
         if (draw) {
             Transform combined = transform * getTransform();
-            if (getOutlineThickness() > 0) {
-                c2d_renderer->draw(&m_outlineVertices, combined, m_font->getTexture(m_characterSize));
+            // draw each atlas page with its own texture (glyphs are spread over
+            // multiple pages once the first one fills up)
+            for (std::size_t i = 0; i < m_textPages.size(); ++i) {
+                Texture *tex = m_font->getTexture(m_characterSize, (unsigned int) i);
+                if (!tex) {
+                    break;
+                }
+                if (getOutlineThickness() > 0 && m_textPages[i].outlineVertices.getVertexCount() > 0) {
+                    c2d_renderer->draw(&m_textPages[i].outlineVertices, combined, tex);
+                }
+                if (m_textPages[i].vertices.getVertexCount() > 0) {
+                    c2d_renderer->draw(&m_textPages[i].vertices, combined, tex);
+                }
             }
-            c2d_renderer->draw(&m_vertices, combined, m_font->getTexture(m_characterSize));
         }
         C2DObject::onDraw(transform, draw);
     }
@@ -588,9 +598,8 @@ void Text::ensureGeometryUpdate() const {
 
     if (!m_font || m_string.empty()) return;
 
-    // 清除之前的几何数据
-    m_vertices.clear();
-    m_outlineVertices.clear();
+    // 清除之前的几何数据（每页顶点数组按需重建）
+    m_textPages.clear();
     m_bounds = FloatRect();
 
     // 获取样式信息
@@ -624,7 +633,26 @@ void Text::ensureGeometryUpdate() const {
     
     // 判断是否为单行模式，转义下原定义懒得修改后面的代码了
 	bool singleLineMode = m_overflow ? false : true;
-	
+
+    // 滚动模式下，若只有偏移变化（布局缓存与当前输入一致），跳过整个布局
+    // 计算（UTF-32 转换、字距、换行、省略号），直接按当前偏移重建顶点。
+    if (m_scrollEnabled && singleLineMode && m_scrollCache.valid &&
+        m_scrollCache.font == m_font &&
+        m_scrollCache.utf32 == utf32String &&
+        m_scrollCache.characterSize == m_characterSize &&
+        m_scrollCache.style == m_style &&
+        m_scrollCache.overflow == m_overflow &&
+        m_scrollCache.outlineThickness == m_outlineThickness &&
+        m_scrollCache.lineSpacing == m_line_spacing &&
+        m_scrollCache.maxSize == m_max_size &&
+        m_scrollCache.scrollEnabled == m_scrollEnabled) {
+        rebuildScrollGeometry();
+        return;
+    }
+    m_scrollCache.valid = false;
+    m_scrollCache.chars.clear();
+    m_scrollCache.xs.clear();
+
     // 计算可用宽度
     float availableWidth = std::numeric_limits<float>::max();
     if (m_max_size.x > 0) availableWidth = m_max_size.x;
@@ -694,7 +722,11 @@ void Text::ensureGeometryUpdate() const {
 
         // 获取当前字符的字形信息
         const Glyph& glyph = m_font->getGlyph(curChar, m_characterSize, bold);
-        
+
+        // 记录布局位置，供滚动快速路径使用（x 为未滚动时的布局坐标）
+        m_scrollCache.chars.push_back(curChar);
+        m_scrollCache.xs.push_back(x);
+
         // 检查是否超出水平边界（考虑可能的省略号）
         float newX = x + glyph.advance;
         // 滚动模式下不做省略号截断（整行字符都参与滚动）
@@ -750,10 +782,11 @@ void Text::ensureGeometryUpdate() const {
             if (m_outlineThickness != 0) {
                 const Glyph& outlineGlyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
                 if (partialClip) {
-                    addGlyphQuadClipped(m_outlineVertices, m_textureSize, {drawX, y},
+                    addGlyphQuadClipped(getPageVertices(outlineGlyph.page, true), m_textureSize, {drawX, y},
                                         m_outlineColor, outlineGlyph, italic, 0.f, availableWidth);
                 } else {
-                    addGlyphQuad(m_outlineVertices, m_textureSize, {drawX, y}, m_outlineColor, outlineGlyph, italic);
+                    addGlyphQuad(getPageVertices(outlineGlyph.page, true), m_textureSize, {drawX, y},
+                                 m_outlineColor, outlineGlyph, italic);
                 }
 
                 // 更新带轮廓的边界
@@ -770,10 +803,11 @@ void Text::ensureGeometryUpdate() const {
 
             // 添加主字形
             if (partialClip) {
-                addGlyphQuadClipped(m_vertices, m_textureSize, {drawX, y},
+                addGlyphQuadClipped(getPageVertices(glyph.page, false), m_textureSize, {drawX, y},
                                     m_fillColor, glyph, italic, 0.f, availableWidth);
             } else {
-                addGlyphQuad(m_vertices, m_textureSize, {drawX, y}, m_fillColor, glyph, italic);
+                addGlyphQuad(getPageVertices(glyph.page, false), m_textureSize, {drawX, y},
+                             m_fillColor, glyph, italic);
             }
 
             // 更新无轮廓的边界
@@ -795,6 +829,19 @@ void Text::ensureGeometryUpdate() const {
     // 滚动模式下记录整行完整宽度（未滚动前所有字符的总宽度）
     m_scrollFullWidth = (m_scrollEnabled && singleLineMode) ? x : 0.f;
 
+    // 刷新滚动布局缓存（完整重建后，下一次仅偏移变化即可走快速路径）
+    m_scrollCache.valid = true;
+    m_scrollCache.font = m_font;
+    m_scrollCache.utf32 = std::move(utf32String);
+    m_scrollCache.characterSize = m_characterSize;
+    m_scrollCache.style = m_style;
+    m_scrollCache.overflow = m_overflow;
+    m_scrollCache.outlineThickness = m_outlineThickness;
+    m_scrollCache.lineSpacing = m_line_spacing;
+    m_scrollCache.maxSize = m_max_size;
+    m_scrollCache.scrollEnabled = m_scrollEnabled;
+    m_scrollCache.fullWidth = x;
+
 add_ellipsis:
     // 如果被截断且是单行模式，添加省略号
     if (!m_scrollEnabled && truncated && singleLineMode && (x + ellipsisWidth) <= availableWidth) {
@@ -805,11 +852,13 @@ add_ellipsis:
             // 添加轮廓
             if (m_outlineThickness != 0) {
                 const Glyph& outlineDotGlyph = m_font->getGlyph(U'.', m_characterSize, bold, m_outlineThickness);
-                addGlyphQuad(m_outlineVertices, m_textureSize, {x, y}, m_outlineColor, outlineDotGlyph, italic);
+                addGlyphQuad(getPageVertices(outlineDotGlyph.page, true), m_textureSize, {x, y},
+                             m_outlineColor, outlineDotGlyph, italic);
             }
             
             // 添加主字形
-            addGlyphQuad(m_vertices, m_textureSize, {x, y}, m_fillColor, dotGlyph, italic);
+            addGlyphQuad(getPageVertices(dotGlyph.page, false), m_textureSize, {x, y},
+                         m_fillColor, dotGlyph, italic);
             
             // 更新边界
             float left = dotGlyph.bounds.left;
@@ -826,11 +875,11 @@ add_ellipsis:
         }
     }
 
-    // 添加行尾的下划线
+    // 添加行尾的下划线（白方块在 page 0 的图集纹理上）
     if (underlined && x > 0) {
-        addLine(m_vertices, m_textureSize, x, y, m_fillColor, underlineOffset, underlineThickness);
+        addLine(getPageVertices(0, false), m_textureSize, x, y, m_fillColor, underlineOffset, underlineThickness);
         if (m_outlineThickness != 0) {
-            addLine(m_outlineVertices, m_textureSize, x, y, 
+            addLine(getPageVertices(0, true), m_textureSize, x, y,
                    m_outlineColor, underlineOffset, underlineThickness, m_outlineThickness);
         }
     }
@@ -840,9 +889,9 @@ add_ellipsis:
         FloatRect xBounds = m_font->getGlyph(U'x', m_characterSize, bold).bounds;
         float strikeThroughOffset = xBounds.top + xBounds.height / 2.f;
         
-        addLine(m_vertices, m_textureSize, x, y, m_fillColor, strikeThroughOffset, underlineThickness);
+        addLine(getPageVertices(0, false), m_textureSize, x, y, m_fillColor, strikeThroughOffset, underlineThickness);
         if (m_outlineThickness != 0) {
-            addLine(m_outlineVertices, m_textureSize, x, y,
+            addLine(getPageVertices(0, true), m_textureSize, x, y,
                    m_outlineColor, strikeThroughOffset, underlineThickness, m_outlineThickness);
         }
     }
@@ -851,8 +900,134 @@ add_ellipsis:
     m_bounds = {minX, minY, maxX - minX, maxY - minY};
     m_size = {m_bounds.width, m_bounds.height};
 
-    m_vertices.update();
-    m_outlineVertices.update();
+    for (auto &page: m_textPages) {
+        page.vertices.update();
+        page.outlineVertices.update();
+    }
+}
+
+c2d::VertexArray &Text::getPageVertices(unsigned int page, bool outline) const {
+    // grow the per-page list on demand: glyphs are laid out sequentially and
+    // new atlas pages get created lazily (a fill + outline array per page)
+    if (m_textPages.size() <= page) {
+        m_textPages.resize(page + 1);
+    }
+    return outline ? m_textPages[page].outlineVertices : m_textPages[page].vertices;
+}
+
+void Text::rebuildScrollGeometry() const {
+    // marquee fast path (m_scrollEnabled && singleLineMode, cache validated):
+    // the glyph layout is unchanged, only the scroll offset moved; regenerate
+    // the vertex quads straight from the cached x positions.
+    const auto &cache = m_scrollCache;
+    const bool bold = m_style & Bold;
+    const bool underlined = m_style & Underlined;
+    const bool strikeThrough = m_style & StrikeThrough;
+    const float italic = (m_style & Italic) ? 0.208f : 0.f;
+    const float scale = static_cast<float>(m_characterSize) / C2D_DEFAULT_CHAR_SIZE;
+
+    float availableWidth = std::numeric_limits<float>::max();
+    if (m_max_size.x > 0) availableWidth = m_max_size.x;
+
+    const float y = static_cast<float>(m_characterSize) + m_font->getOffset().y * scale;
+
+    m_textPages.clear();
+
+    bool anyVisible = false;
+    float minX = 0.f, minY = 0.f, maxX = 0.f, maxY = 0.f;
+
+    for (std::size_t i = 0; i < cache.chars.size(); ++i) {
+        const uint32_t curChar = cache.chars[i];
+        const float x = cache.xs[i];
+        const Glyph &glyph = m_font->getGlyph(curChar, m_characterSize, bold);
+
+        const float drawX = x - m_scrollOffset;
+        const bool skipGlyph = (drawX + glyph.bounds.width <= 0) || (drawX >= availableWidth);
+        const bool partialClip = !skipGlyph && (drawX + glyph.bounds.left < 0 ||
+                                                drawX + glyph.bounds.left + glyph.bounds.width > availableWidth);
+
+        if (skipGlyph) {
+            continue;
+        }
+        if (!anyVisible) {
+            minX = drawX;
+            minY = y;
+            maxX = drawX;
+            maxY = y;
+            anyVisible = true;
+        }
+
+        if (m_outlineThickness != 0) {
+            const Glyph &outlineGlyph = m_font->getGlyph(curChar, m_characterSize, bold, m_outlineThickness);
+            if (partialClip) {
+                addGlyphQuadClipped(getPageVertices(outlineGlyph.page, true), m_textureSize, {drawX, y},
+                                    m_outlineColor, outlineGlyph, italic, 0.f, availableWidth);
+            } else {
+                addGlyphQuad(getPageVertices(outlineGlyph.page, true), m_textureSize, {drawX, y},
+                             m_outlineColor, outlineGlyph, italic);
+            }
+            const float left = outlineGlyph.bounds.left - m_outlineThickness;
+            const float top = outlineGlyph.bounds.top - m_outlineThickness;
+            const float right = outlineGlyph.bounds.left + outlineGlyph.bounds.width + m_outlineThickness;
+            const float bottom = outlineGlyph.bounds.top + outlineGlyph.bounds.height + m_outlineThickness;
+            minX = std::min(minX, drawX + left - italic * bottom);
+            maxX = std::max(maxX, drawX + right - italic * top);
+            minY = std::min(minY, y + top);
+            maxY = std::max(maxY, y + bottom);
+        }
+
+        if (partialClip) {
+            addGlyphQuadClipped(getPageVertices(glyph.page, false), m_textureSize, {drawX, y},
+                                m_fillColor, glyph, italic, 0.f, availableWidth);
+        } else {
+            addGlyphQuad(getPageVertices(glyph.page, false), m_textureSize, {drawX, y},
+                         m_fillColor, glyph, italic);
+        }
+        const float left = glyph.bounds.left;
+        const float top = glyph.bounds.top;
+        const float right = glyph.bounds.left + glyph.bounds.width;
+        const float bottom = glyph.bounds.top + glyph.bounds.height;
+        minX = std::min(minX, drawX + left - italic * bottom);
+        maxX = std::max(maxX, drawX + right - italic * top);
+        minY = std::min(minY, y + top);
+        maxY = std::max(maxY, y + bottom);
+    }
+
+    // underline / strikethrough span the whole unscrolled text width (same as
+    // the full rebuild: they do not scroll with the glyphs).
+    const float x = cache.fullWidth;
+    if (underlined && x > 0) {
+        const float underlineOffset = m_font->getUnderlinePosition(m_characterSize);
+        const float underlineThickness = m_font->getUnderlineThickness(m_characterSize);
+        addLine(getPageVertices(0, false), m_textureSize, x, y, m_fillColor, underlineOffset, underlineThickness);
+        if (m_outlineThickness != 0) {
+            addLine(getPageVertices(0, true), m_textureSize, x, y, m_outlineColor,
+                    underlineOffset, underlineThickness, m_outlineThickness);
+        }
+    }
+    if (strikeThrough && x > 0) {
+        const FloatRect xBounds = m_font->getGlyph(U'x', m_characterSize, bold).bounds;
+        const float strikeThroughOffset = xBounds.top + xBounds.height / 2.f;
+        const float underlineThickness = m_font->getUnderlineThickness(m_characterSize);
+        addLine(getPageVertices(0, false), m_textureSize, x, y, m_fillColor, strikeThroughOffset, underlineThickness);
+        if (m_outlineThickness != 0) {
+            addLine(getPageVertices(0, true), m_textureSize, x, y, m_outlineColor,
+                    strikeThroughOffset, underlineThickness, m_outlineThickness);
+        }
+    }
+
+    if (anyVisible) {
+        m_bounds = {minX, minY, maxX - minX, maxY - minY};
+    } else {
+        m_bounds = FloatRect();
+    }
+    m_size = {m_bounds.width, m_bounds.height};
+    m_scrollFullWidth = cache.fullWidth;
+
+    for (auto &page: m_textPages) {
+        page.vertices.update();
+        page.outlineVertices.update();
+    }
 }
 
 

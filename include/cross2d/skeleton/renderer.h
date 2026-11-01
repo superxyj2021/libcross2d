@@ -37,6 +37,18 @@ namespace c2d {
 
         virtual void clear() {};
 
+        /// called after external GL work that may have changed the GL state
+        /// (e.g. an embedded mpv render into the same context); implementations
+        /// that cache GL state must drop their cache so the next draw re-applies
+        /// everything.
+        virtual void onExternalGLRender() {};
+
+        /// called when a gpu texture is destroyed (before the gl texture id
+        /// is freed): implementations that cache GL state must drop the cached
+        /// texture id, otherwise a reused id would make the next draw skip the
+        /// bind and render from a deleted texture (intermittent crashes).
+        virtual void onTextureDeleted(unsigned int texID) { (void) texID; };
+
         virtual void flip(bool draw = true, bool process_inputs = true);
 
         virtual void delay(unsigned int millis) {};

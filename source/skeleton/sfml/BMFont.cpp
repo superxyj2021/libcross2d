@@ -265,7 +265,7 @@ namespace c2d {
 
 
     ////////////////////////////////////////////////////////////
-    Texture *BMFont::getTexture(unsigned int characterSize) {
+    Texture *BMFont::getTexture(unsigned int characterSize, unsigned int page) {
         return m_texture;
     }
 

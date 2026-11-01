@@ -25,9 +25,18 @@ namespace c2d {
 
         void flip(bool draw = true, bool inputs = true) override;
 
+        void onExternalGLRender() override;
+
+        void onTextureDeleted(unsigned int texID) override;
+
         unsigned int vao = 0;
 
     private:
+
+        GLuint m_currentProgram = 0;
+        GLuint m_currentTexture = 0;
+        bool m_blendEnabled = false;
+        bool m_texAttribEnabled = false;
 
         const GLenum modes[7] = {GL_POINTS, GL_LINES, GL_LINE_STRIP, GL_TRIANGLES,
                                  GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN, GL_QUADS};

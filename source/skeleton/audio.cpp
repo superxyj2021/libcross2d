@@ -15,7 +15,10 @@ Audio::Audio(int rate, int samples, C2DAudioCallback cb) {
     m_samples_size = m_samples * channels * (int) sizeof(int16_t);
 
     m_buffer = new SampleBuffer();
-    m_buffer->resize(m_samples * channels * 3);
+    // 2 frames of emulated audio: with the LowLatency sync (1-frame low-water
+    // mark) this is enough headroom and halves the buffered latency vs 3 frames.
+    // the SDL2 platform overrides the capacity below (see SDL2Audio ctor).
+    m_buffer->resize(m_samples * channels * 2);
 
     callback = cb;
     available = true;

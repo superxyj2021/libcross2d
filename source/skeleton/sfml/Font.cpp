@@ -162,26 +162,33 @@ namespace c2d {
 ////////////////////////////////////////////////////////////
     const Glyph &Font::getGlyph(uint32_t codePoint, unsigned int characterSize,
                                 bool bold, float outlineThickness) const {
-        // Get the page corresponding to the character size
-        // (create it with the font filtering applied once, see Page ctor)
-        auto pageIt = m_pages.try_emplace(characterSize, m_filtering);
-        GlyphTable &glyphs = pageIt.first->second.glyphs;
+        // Get the list of atlas pages for this character size
+        // (create the first one with the font filtering applied once, see Page ctor)
+        auto &pages = m_pages[characterSize];
+        if (pages.empty()) {
+            pages.emplace_back(m_filtering);
+        }
 
         // Build the key by combining the code point, bold flag, and outline thickness
         uint64_t key = (static_cast<uint64_t>(*&outlineThickness) << 32)
                        | (static_cast<uint64_t>(bold ? 1 : 0) << 31)
                        | static_cast<uint64_t>(codePoint);
 
-        // Search the glyph into the cache
-        if (auto it = glyphs.find(key); it != glyphs.end()) {
-            // Found: just return it
-            return it->second;
-        } else {
-            // Not found: we have to load it
-            Glyph glyph = loadGlyph(codePoint, characterSize, bold, outlineThickness);
-            //printf("Font::getGlyph(%c): advance: %f\n", codePoint, glyph.advance);
-            return glyphs.emplace(key, glyph).first->second;
+        // Search the glyph into every page (glyphs are spread over pages as
+        // the atlas fills up). A deque is used so that push_back during a
+        // later loadGlyph() does not invalidate the returned references.
+        for (auto &page: pages) {
+            if (auto it = page.glyphs.find(key); it != page.glyphs.end()) {
+                // Found: just return it
+                return it->second;
+            }
         }
+
+        // Not found: we have to load it (may create a new page if the atlas is full)
+        Glyph glyph = loadGlyph(codePoint, characterSize, bold, outlineThickness);
+        //printf("Font::getGlyph(%c): advance: %f\n", codePoint, glyph.advance);
+        auto &target = pages[glyph.page];
+        return target.glyphs.emplace(key, glyph).first->second;
     }
 
 
@@ -340,15 +347,24 @@ namespace c2d {
 
 
 ////////////////////////////////////////////////////////////
-    Texture *Font::getTexture(unsigned int characterSize) {
-        return m_pages.try_emplace(characterSize, m_filtering).first->second.texture;
+    Texture *Font::getTexture(unsigned int characterSize, unsigned int page) {
+        auto &pages = m_pages[characterSize];
+        if (pages.empty()) {
+            pages.emplace_back(m_filtering);
+        }
+        if (page >= pages.size()) {
+            return nullptr;
+        }
+        return pages[page].texture;
     }
 
     void Font::setFilter(Texture::Filter filter) {
         m_filtering = filter;
         for (auto &entry: m_pages) {
-            if (entry.second.texture) {
-                entry.second.texture->setFilter(filter);
+            for (auto &page: entry.second) {
+                if (page.texture) {
+                    page.texture->setFilter(filter);
+                }
             }
         }
     }
@@ -496,15 +512,35 @@ namespace c2d {
             width += 2 * padding;
             height += 2 * padding;
 
-            // Get the glyphs page corresponding to the character size
-            // (create it with the font filtering applied once, see Page ctor)
-            Page &page = m_pages.try_emplace(characterSize, m_filtering).first->second;
+            // Find the page that has room for the glyph; pages are fixed-size,
+            // so when the current one is full we add a new page and retry.
+            auto &pages = m_pages[characterSize];
+            if (pages.empty()) {
+                pages.emplace_back(m_filtering);
+            }
 
-            // Find a good position for the new glyph into the texture
-            glyph.textureRect = findGlyphRect(page, width, height);
-            if (glyph.textureRect == IntRect()) {
+            // a glyph larger than one fixed-size page can never be placed
+            // (e.g. an absurdly large character size): bail out like the old
+            // "maximum texture size reached" path instead of looping forever
+            if (width > 1024 || height > 1024) {
                 return glyph;
             }
+
+            unsigned int pageIndex = 0;
+            IntRect texRect;
+            for (;;) {
+                texRect = findGlyphRect(pages[pageIndex], width, height);
+                if (texRect != IntRect()) {
+                    break;
+                }
+                // current page is full: create a new one and try again
+                pageIndex++;
+                if (pageIndex >= pages.size()) {
+                    pages.emplace_back(m_filtering);
+                }
+            }
+            glyph.page = pageIndex;
+            glyph.textureRect = texRect;
 
             // Make sure the texture data is positioned in the center
             // of the allocated texture rectangle
@@ -584,7 +620,7 @@ namespace c2d {
             uint8_t *dst;
             int pitch;
             IntRect rect = {(int) x, (int) y, (int) w, (int) h};
-            page.texture->lock(&dst, &pitch, rect);
+            pages[pageIndex].texture->lock(&dst, &pitch, rect);
 
             const uint8_t *src = m_pixelBuffer.data();
 
@@ -594,9 +630,9 @@ namespace c2d {
                 dst += pitch;
             }
 
-            page.texture->setUnpackRowLength(page.texture->getTextureSize().x);
-            page.texture->unlock();
-            page.texture->setUnpackRowLength(0);
+            pages[pageIndex].texture->setUnpackRowLength(pages[pageIndex].texture->getTextureSize().x);
+            pages[pageIndex].texture->unlock();
+            pages[pageIndex].texture->setUnpackRowLength(0);
         }
 
         // Delete the FT glyph
@@ -638,20 +674,12 @@ namespace c2d {
         // If we didn't find a matching row, create a new one (10% taller than the glyph)
         if (!row) {
             unsigned int rowHeight = height + height / 10;
-            while ((page.nextRow + rowHeight >= (unsigned int) page.texture->getTextureSize().y)
-                   || (width >= (unsigned int) page.texture->getTextureSize().x)) {
-                // Not enough space: resize the texture if possible
-                auto texWidth = (unsigned int) page.texture->getTextureSize().x;
-                auto texHeight = (unsigned int) page.texture->getTextureSize().y;
-                if ((texWidth * 2 <= 2048) && (texHeight * 2 <= 2048)) {
-                    //printf("Font:: resizing font texture from %ix%i to %ix%i\n",
-                    //     texWidth, texHeight, texWidth * 2, texHeight * 2);
-                    page.texture->resize({(int) texWidth * 2, (int) texHeight * 2}, true);
-                } else {
-                    // Oops, we've reached the maximum texture size...
-                    printf("Failed to add a new character to the font: the maximum texture size has been reached\n");
-                    return {0, 0, 0, 0};
-                }
+            // Fixed-size page: if the new row does not fit, report page-full
+            // ({0,0,0,0}) so the caller creates a new page and retries.
+            unsigned int texWidth = (unsigned int) page.texture->getTextureSize().x;
+            unsigned int texHeight = (unsigned int) page.texture->getTextureSize().y;
+            if ((page.nextRow + rowHeight >= texHeight) || (width >= texWidth)) {
+                return {0, 0, 0, 0};
             }
 
             // We can now create the new row
@@ -712,12 +740,13 @@ namespace c2d {
 
     Font::Page::Page(Texture::Filter filter) : nextRow(3) {
         //printf("Font:: create new tex\n");
-        // Start the glyph atlas at 512x512 instead of 128x128: with large
-        // Chinese fonts a rom list easily needs thousands of glyphs, and
-        // every resize() uploads the whole texture again (glTexImage2D).
-        // Starting bigger means 512->1024->2048 (2 resizes) instead of
-        // 128->...->2048 (5 resizes) during the first frame.
-        texture = new C2DTexture({512, 512}, Texture::Format::RGBA8);
+        // Fixed-size atlas page: 1024x1024, never resized. The atlas is a list
+        // of pages (see m_pages): when a page fills up, a new one is created.
+        // Fixed pages keep glyph texture coordinates stable during a layout pass
+        // (a growing page would invalidate the UVs of already-placed glyphs),
+        // and multi-page spreads a huge CJK font over several 4MB textures
+        // instead of a single up-to-2048 one.
+        texture = new C2DTexture({1024, 1024}, Texture::Format::RGBA8);
 
         // apply the font filtering once at page creation, NOT on every
         // getGlyph() lookup (that used to cost thousands of redundant

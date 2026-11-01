@@ -78,7 +78,7 @@ namespace c2d {
 
         float getUnderlineThickness(unsigned int characterSize) const override;
 
-        Texture *getTexture(unsigned int characterSize) override;
+        Texture *getTexture(unsigned int characterSize, unsigned int page = 0) override;
 
         void setFilter(Texture::Filter filter) override;
 

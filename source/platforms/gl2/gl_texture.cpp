@@ -9,10 +9,14 @@
 using namespace c2d;
 
 GLTexture::GLTexture(const std::string &path) : Texture(path) {
+    // static image (skin/cover): the CPU buffer is only needed for the initial
+    // upload, free it after createTexture() to save memory (see m_keepCpuBuffer)
+    m_keepCpuBuffer = false;
     available = createTexture() == 0;
 }
 
 GLTexture::GLTexture(const unsigned char *buffer, int bufferSize) : Texture(buffer, bufferSize) {
+    m_keepCpuBuffer = false;
     available = createTexture() == 0;
 }
 
@@ -79,6 +83,12 @@ int GLTexture::createTexture() {
 #endif
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    // static textures don't need the CPU buffer anymore once uploaded
+    if (!m_keepCpuBuffer) {
+        free(m_pixels);
+        m_pixels = nullptr;
+    }
+
     return 0;
 }
 
@@ -97,8 +107,8 @@ int GLTexture::resize(const Vector2i &size, bool keepPixels) {
     auto dst_pixels = (uint8_t *) malloc(dst_pitch * size.y);
     memset(dst_pixels, 0, dst_pitch * size.y);
 
-    // copy pixels if requested
-    if (keepPixels) {
+    // copy pixels if requested (skip when the CPU buffer was released)
+    if (keepPixels && m_pixels) {
         auto dst = dst_pixels;
         auto src = m_pixels;
         for (int i = 0; i < m_tex_size.y; i++) {
@@ -175,6 +185,11 @@ void GLTexture::setFilter(Filter f) {
 
 GLTexture::~GLTexture() {
     if (glIsTexture(m_texID)) {
+        // the renderer caches the bound texture id: drop it before the id is
+        // freed (gl ids get reused, which would otherwise skip the next bind)
+        if (c2d_renderer) {
+            c2d_renderer->onTextureDeleted(m_texID);
+        }
         //printf("glDeleteTextures(%i)\n", texID);
         glDeleteTextures(1, &m_texID);
     }

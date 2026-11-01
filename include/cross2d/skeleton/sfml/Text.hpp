@@ -410,6 +410,24 @@ namespace c2d {
         ////////////////////////////////////////////////////////////
         void ensureGeometryUpdate() const;
 
+        // marquee fast path: rebuild vertex quads from the cached glyph layout
+        // when only the scroll offset changed (see m_scrollCache).
+        void rebuildScrollGeometry() const;
+
+        //// multi-page font atlas: glyphs can live in different atlas pages, each with
+        // its own texture, so the fill/outline geometry is kept per page and
+        // drawn with that page's texture (one draw per non-empty page).
+        struct TextPageData {
+            TextPageData() : vertices(Triangles), outlineVertices(Triangles) {}
+
+            c2d::VertexArray vertices;
+            c2d::VertexArray outlineVertices;
+        };
+
+        // get the vertex array of an atlas page, growing the per-page list on
+        // demand (glyphs are laid out page by page as new pages get created)
+        c2d::VertexArray &getPageVertices(unsigned int page, bool outline) const;
+
         ////////////////////////////////////////////////////////////
         // Member data
         ////////////////////////////////////////////////////////////
@@ -421,8 +439,7 @@ namespace c2d {
         c2d::Color m_fillColor;          ///< Text fill color
         c2d::Color m_outlineColor;       ///< Text outline color
         float m_outlineThickness;   ///< Thickness of the text's outline
-        mutable c2d::VertexArray m_vertices;           ///< Vertex array containing the fill geometry
-        mutable c2d::VertexArray m_outlineVertices;    ///< Vertex array containing the outline geometry
+        mutable std::vector<TextPageData> m_textPages; ///< Fill/outline geometry per atlas page
         mutable c2d::FloatRect m_bounds;             ///< Bounding rectangle of the text (in local coordinates)
         mutable bool m_geometryNeedUpdate; ///< Does the geometry need to be recomputed?
         mutable c2d::Vector2f m_max_size = {4096, 4096};
@@ -433,6 +450,26 @@ namespace c2d {
         bool m_scrollEnabled = false;
         float m_scrollOffset = 0.f;
         mutable float m_scrollFullWidth = 0.f;
+
+        // layout cache: when only m_scrollOffset changes, the glyph layout
+        // (kerning/wrapping/x positions) is unchanged, so the scroll update can
+        // skip the whole layout pass and only regenerate the vertex quads.
+        struct ScrollLayoutCache {
+            bool valid = false;
+            const c2d::Font *font = nullptr;
+            std::u32string utf32;
+            unsigned int characterSize = 0;
+            uint32_t style = 0;
+            uint32_t overflow = 0;
+            float outlineThickness = 0.f;
+            int lineSpacing = 0;
+            c2d::Vector2f maxSize;
+            bool scrollEnabled = false;
+            std::vector<uint32_t> chars;
+            std::vector<float> xs;
+            float fullWidth = 0.f;
+        };
+        mutable ScrollLayoutCache m_scrollCache;
     };
 
 } // namespace sf

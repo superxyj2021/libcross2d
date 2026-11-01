@@ -92,6 +92,11 @@ namespace c2d::config {
 
         void setArrayMovePrev();
 
+        // true when the current value equals the default it was created with
+        // (before any config file override). used by the ui to highlight
+        // options the user changed away from their default.
+        bool isDefault() const;
+
         /// ...
         [[nodiscard]] std::string getName() const;
 
@@ -131,6 +136,7 @@ namespace c2d::config {
         std::string name{};
 		std::string info{};
 		std::string displayname{};
+        std::string m_defaultString{};
         Type type{};
         int id = -1;
         unsigned int m_flags = 0;

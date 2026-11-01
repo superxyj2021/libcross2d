@@ -21,6 +21,7 @@ Option::Option(const std::string &name, const std::string &value, int id, const 
     setComment(comment);
     setType(Type::String);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, int value, int id, const std::string &comment, const std::string &displayname) {
@@ -30,6 +31,7 @@ Option::Option(const std::string &name, int value, int id, const std::string &co
     setComment(comment);
     setType(Type::Integer);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, float value, int id, const std::string &comment, const std::string &displayname) {
@@ -39,6 +41,7 @@ Option::Option(const std::string &name, float value, int id, const std::string &
     setComment(comment);
     setType(Type::Float);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, const c2d::Vector2f &value, int id, const std::string &comment, const std::string &displayname) {
@@ -48,6 +51,7 @@ Option::Option(const std::string &name, const c2d::Vector2f &value, int id, cons
     setComment(comment);
     setType(Type::Vector2f);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, const c2d::FloatRect &value, int id, const std::string &comment, const std::string &displayname) {
@@ -57,6 +61,7 @@ Option::Option(const std::string &name, const c2d::FloatRect &value, int id, con
     setComment(comment);
     setType(Type::FloatRect);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, const Color &value, int id, const std::string &comment, const std::string &displayname) {
@@ -66,6 +71,7 @@ Option::Option(const std::string &name, const Color &value, int id, const std::s
     setComment(comment);
     setType(Type::Color);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 Option::Option(const std::string &name, const std::vector<std::string> &values, int index, int id,
@@ -76,6 +82,7 @@ Option::Option(const std::string &name, const std::vector<std::string> &values, 
     setComment(comment);
     setType(Type::Array);
     setDisplayName(displayname);
+    m_defaultString = getString();
 }
 
 std::string Option::getName() const {
@@ -274,4 +281,10 @@ void Option::setArrayMovePrev() {
     if (array_index < 0) {
         array_index = (int) array.size() - 1;
     }
+}
+
+bool Option::isDefault() const {
+    // note: for array options the comparison uses the current element string;
+    // the default is the element selected at construction time.
+    return getString() == m_defaultString;
 }

@@ -128,6 +128,14 @@ int Texture::lock(uint8_t **pixels, int *pitch, IntRect rect) {
         m_unlock_rect = rect;
     }
 
+    // reallocate the CPU buffer if it was released after the initial upload
+    if (!m_pixels) {
+        m_pixels = (uint8_t *) MALLOC(m_tex_size_pot.x * m_tex_size_pot.y * m_bpp);
+        if (m_pixels) {
+            memset(m_pixels, 0, m_tex_size_pot.x * m_tex_size_pot.y * m_bpp);
+        }
+    }
+
     if (pitch) {
         *pitch = m_pitch;
     }

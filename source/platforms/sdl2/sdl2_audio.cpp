@@ -87,7 +87,10 @@ SDL2Audio::SDL2Audio(int freq, int samples, C2DAudioCallback cb) : Audio(freq, s
     // adjust to obtained values
     m_samples = samples;
     m_samples_size = samples * channels * (int) sizeof(int16_t);
-    m_buffer->resize(obtained.samples * channels * 5);
+    // 3 device periods of buffering: enough for the LowLatency sync (which
+    // keeps queued samples around 1 emulator frame) without the old 5-period
+    // safety margin; lowers audio latency and memory.
+    m_buffer->resize(obtained.samples * channels * 3);
 
     printf("SDL2Audio: rate = %i, samples = %i, samples size = %i (sdl samples size: %i)\n",
            m_sample_rate, m_samples, m_samples_size, obtained.size);
@@ -102,9 +105,18 @@ SDL2Audio::~SDL2Audio() {
         SDL_CloseAudioDevice(deviceID);
     }
 
+#ifndef __SWITCH__
+    // on desktop the audio subsystem can be torn down per device and re-inited
+    // on the next game; the switch SDL2 audio backend (audout) does not like
+    // being initialized/quitted repeatedly in one session - quitting the whole
+    // subsystem after every game and then having the renderer's atexit SDL_Quit()
+    // touch it again at app exit caused intermittent crashes when closing the
+    // app after a game session. keep it initialized here; SDL_Quit() at exit
+    // (SDL2Renderer::exitCallback) performs the single final teardown.
     if (SDL_WasInit(SDL_INIT_AUDIO)) {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
+#endif
 }
 
 void SDL2Audio::pause(int pause) {

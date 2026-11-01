@@ -58,6 +58,7 @@ namespace c2d {
         int rsbDelta{};    //!< Right offset after forced autohint. Internally used by getKerning()
         FloatRect bounds;      ///< Bounding rectangle of the glyph, in coordinates relative to the baseline
         IntRect textureRect; ///< Texture coordinates of the glyph inside the font's texture
+        unsigned int page = 0; ///< Index of the atlas page the glyph lives in (multi-page fonts)
     };
 
 } // namespace c2d

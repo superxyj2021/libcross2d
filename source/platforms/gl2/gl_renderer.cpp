@@ -56,8 +56,12 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
         shader = (GLShader *) tex->m_shader;
     }
 
-    // set shader
-    GL_CHECK(glUseProgram(shader->GetProgram()));
+    // set shader (cached: consecutive draws mostly use the same program)
+    GLuint program = shader->GetProgram();
+    if (program != m_currentProgram) {
+        GL_CHECK(glUseProgram(program));
+        m_currentProgram = program;
+    }
 
     // update viewport with the physical drawable size
 #if defined(__SDL2__)
@@ -87,7 +91,7 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
     shader->SetUniformMatrix("MVPMatrix", glm::value_ptr(mpvMatrix));
 
 #ifdef glBindVertexArray
-    // bind vao
+    // bind vao (cheap, and survives external renders that may unbind it)
     GL_CHECK(glBindVertexArray(vao));
 #endif
     // bind vbo
@@ -104,10 +108,16 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
                                    (void *) offsetof(Vertex, color)));
 
     if (tex && tex->available) {
-        // bind texture
-        GL_CHECK(glBindTexture(GL_TEXTURE_2D, tex->m_texID));
-        // set tex coords
-        GL_CHECK(glEnableVertexAttribArray(2));
+        // bind texture (cached)
+        if (tex->m_texID != m_currentTexture) {
+            GL_CHECK(glBindTexture(GL_TEXTURE_2D, tex->m_texID));
+            m_currentTexture = tex->m_texID;
+        }
+        // set tex coords (attrib 2 toggled only when it changes)
+        if (!m_texAttribEnabled) {
+            GL_CHECK(glEnableVertexAttribArray(2));
+            m_texAttribEnabled = true;
+        }
         GL_CHECK(glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
                                        (void *) offsetof(Vertex, texCoords)));
         // set retroarch shader params
@@ -119,43 +129,35 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
         shader->SetUniform("InputSize", inputSize);
         shader->SetUniform("TextureSize", textureSize);
         shader->SetUniform("OutputSize", outputSize);
-#if 0
-        printf("inputSize: %ix%i, textureSize: %ix%i, outputSize: %ix%i\n",
-               (int) inputSize.x, (int) inputSize.y,
-               (int) textureSize.x, (int) textureSize.y,
-               (int) outputSize.x, (int) outputSize.y);
-#endif
+    } else if (m_texAttribEnabled) {
+        // no texture this draw: drop the texcoord attrib and unbind
+        GL_CHECK(glDisableVertexAttribArray(2));
+        m_texAttribEnabled = false;
+        if (m_currentTexture) {
+            GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+            m_currentTexture = 0;
+        }
     }
 
-    // enable blending if needed
-    if (tex || vertices[0].color.a < 255) {
-        GL_CHECK(glEnable(GL_BLEND));
-        GL_CHECK(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+    // enable blending only when it actually changes state
+    const bool blendNeeded = (tex != nullptr) || vertices[0].color.a < 255;
+    if (blendNeeded != m_blendEnabled) {
+        if (blendNeeded) {
+            GL_CHECK(glEnable(GL_BLEND));
+            GL_CHECK(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+        } else {
+            GL_CHECK(glDisable(GL_BLEND));
+        }
+        m_blendEnabled = blendNeeded;
     }
 
     // draw
     GLenum mode = modes[vertexArray->getPrimitiveType()];
     GL_CHECK(glDrawArrays(mode, 0, (GLsizei) vertexCount));
 
-    GL_CHECK(glDisableVertexAttribArray(0));
-    GL_CHECK(glDisableVertexAttribArray(1));
-
-    if (tex || vertices[0].color.a < 255) {
-        GL_CHECK(glDisable(GL_BLEND));
-        if (tex && tex->available) {
-            GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
-            GL_CHECK(glDisableVertexAttribArray(2));
-        }
-    }
-
-#ifdef glBindVertexArray
-    // unbind object vao
-    glBindVertexArray(0);
-#endif
-    // unbind object vbo
-    vertexArray->unbind();
-
-    GL_CHECK(glUseProgram(0));
+    // no per-draw unbinding: program/texture/blend are cached across draws.
+    // external renders into the same context (e.g. mpv) must call
+    // onExternalGLRender() to invalidate the cache.
 }
 
 void GLRenderer::clear() {
@@ -167,6 +169,25 @@ void GLRenderer::clear() {
     GL_CHECK(glClear(GL_COLOR_BUFFER_BIT));
 }
 
+void GLRenderer::onExternalGLRender() {
+    // external GL work (e.g. mpv into the same context) may have changed the
+    // program/texture/blend/attrib state behind our back: drop the cache so the
+    // next draw() re-applies everything.
+    m_currentProgram = 0;
+    m_currentTexture = 0;
+    m_blendEnabled = false;
+    m_texAttribEnabled = false;
+}
+
+void GLRenderer::onTextureDeleted(unsigned int texID) {
+    // a texture was destroyed: its id can be reused by a later allocation, and
+    // the cached id would then make the next draw skip glBindTexture and render
+    // from the deleted (or wrong) texture. drop the cached id if it matches.
+    if (m_currentTexture == texID) {
+        m_currentTexture = 0;
+    }
+}
+
 void GLRenderer::flip(bool draw, bool inputs) {
     // call base class (draw childs)
     Renderer::flip(draw, inputs);
@@ -174,6 +195,10 @@ void GLRenderer::flip(bool draw, bool inputs) {
 
 GLRenderer::~GLRenderer() {
     printf("~GL2Renderer\n");
+    // textures are destroyed during the base ~C2DObject, at which point the
+    // renderer's vptr no longer dispatches to GLRenderer methods; null the
+    // global so their destructors skip the (virtual) cache invalidation
+    c2d_renderer = nullptr;
 #ifdef glIsVertexArray
     if (glIsVertexArray(vao)) {
         GL_CHECK(glDeleteVertexArrays(1, &vao));

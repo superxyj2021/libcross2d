@@ -20,7 +20,13 @@ SDL2Renderer::SDL2Renderer(const Vector2f &s) : GLRenderer(s) {
 #endif
 #endif
 
-    if ((SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE)) < 0) {
+    // AUDIO is pre-initialized here (not lazily on the first game) so that
+    // SDL_OpenAudioDevice never takes ownership of the subsystem init: closing
+    // a device then does not tear the whole audio subsystem down mid-app. this
+    // matters on switch where repeated audout init/quit within one session and
+    // a second teardown from the atexit SDL_Quit() caused intermittent crashes
+    // when closing the app after a game.
+    if ((SDL_Init(SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE)) < 0) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't init sdl: %s\n", SDL_GetError());
         return;
     }
