@@ -355,6 +355,7 @@ namespace c2d {
         FloatRect m_bounds;           ///< Bounding rectangle of the whole shape (outline + fill)
         Origin m_shape_origin = Origin::TopLeft;
         bool m_shape_dirty = false;
+        bool m_colorDirty = false;        ///< outline color changed, geometry untouched
 
 #ifdef __BOX2D__
         PhysicsWorld *m_world = nullptr;

@@ -124,7 +124,11 @@ namespace c2d {
     void Shape::setOutlineColor(const Color &color) {
         if (m_outlineColor != color) {
             m_outlineColor = color;
-            m_shape_dirty = true;
+            if (!m_shape_dirty) {
+                // geometry is up to date: only the outline color changed,
+                // skip the full geometry rebuild (fill + outline positions)
+                m_colorDirty = true;
+            }
         }
     }
 
@@ -274,6 +278,13 @@ namespace c2d {
     void Shape::onDraw(Transform &transform, bool draw) {
         if (m_shape_dirty) {
             update();
+            m_colorDirty = false;
+        } else if (m_colorDirty) {
+            // only the outline color changed (e.g. the highlight gradient
+            // animation): refresh the outline vertex colors without
+            // recomputing fill/outline geometry or re-uploading the fill VBO
+            updateOutlineColors();
+            m_colorDirty = false;
         }
 
 #ifdef __BOX2D__

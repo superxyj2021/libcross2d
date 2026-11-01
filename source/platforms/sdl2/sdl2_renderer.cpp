@@ -79,17 +79,21 @@ SDL2Renderer::SDL2Renderer(const Vector2f &s) : GLRenderer(s) {
         return;
     }
 
-    SDL_GetWindowSize(window, &size.x, &size.y);
-    if (size.x != (int) Renderer::getSize().x || size.y != (int) Renderer::getSize().y) {
-        SDL2Renderer::setSize((float) size.x, (float) size.y);
-    }
-
     context = SDL_GL_CreateContext(window);
     if (!context) {
         printf("Couldn't SDL_GL_CreateContext: %s\n", SDL_GetError());
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't SDL_GL_CreateContext: %s\n",
                      SDL_GetError());
         return;
+    }
+
+    // use the actual GL drawable size (framebuffer) as the logical renderer size.
+    // on some platforms the window size reported by SDL differs from the real
+    // framebuffer (e.g. Switch docked: window 1920x1080, GL drawable 1280x720),
+    // which would mis-scale the whole UI layout and leave parts off-screen.
+    SDL_GL_GetDrawableSize(window, &size.x, &size.y);
+    if (size.x != (int) Renderer::getSize().x || size.y != (int) Renderer::getSize().y) {
+        SDL2Renderer::setSize((float) size.x, (float) size.y);
     }
 
     SDL_GL_SetSwapInterval(1);
@@ -121,6 +125,15 @@ SDL2Renderer::SDL2Renderer(const Vector2f &s) : GLRenderer(s) {
 
 void SDL2Renderer::setFullscreen(const bool value) {
     if (!value) return;
+
+#ifdef __SWITCH__
+    // no-op on switch: the app already fills the screen - the requested 1280x720
+    // GL surface is presented fullscreen by the system (scaled to 1080p when
+    // docked). Calling SDL_SetWindowFullscreen only makes SDL report the display
+    // resolution (1920x1080 docked) while the GL surface keeps the requested
+    // size; resizing the renderer to that lie mis-scales the whole UI.
+    return;
+#endif
 
     SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
 

@@ -121,7 +121,9 @@ if (NOT PLATFORM_PS3)
     pkg_search_module(ZLIB REQUIRED zlib)
 endif ()
 
-set(C2D_CFLAGS -Wall -Wno-narrowing -DLIBCONFIG_STATIC -D__CROSS2D__)
+set(C2D_CFLAGS -Wall -Wno-narrowing -DLIBCONFIG_STATIC -D__CROSS2D__
+        # stb_image.h: known gcc -Wstringop-overflow false positive (tc[3] loop)
+        -Wno-stringop-overflow)
 set(C2D_INCLUDES include ${FREETYPE_INCLUDE_DIRS} ${PNG_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
 set(C2D_LDFLAGS ${FREETYPE_LIBRARIES} ${PNG_LIBRARIES} ${ZLIB_LIBRARIES})
 set(CMAKE_CXX_STANDARD 17)

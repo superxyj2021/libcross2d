@@ -59,7 +59,7 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
     // set shader
     GL_CHECK(glUseProgram(shader->GetProgram()));
 
-    // set projection
+    // update viewport with the physical drawable size
 #if defined(__SDL2__)
     int w, h;
     SDL_Window *window = ((SDL2Renderer *) this)->getWindow();
@@ -68,11 +68,17 @@ void GLRenderer::draw(VertexArray *vertexArray, const Transform &transform, Text
     int w = (int) getSize().x, h = (int) getSize().y;
 #endif
 
-    // update viewport
-    glViewport(0, 0, w, h);
+    // viewport and projection must both live in logical renderer space: on some
+    // platforms (e.g. Switch/Yuzu) the drawable size reported by SDL can differ
+    // from the real framebuffer the app was given (window went "fullscreen" to
+    // the display resolution while the GL surface stayed at the requested size).
+    // Rendering in renderer space guarantees the UI always fills the surface.
+    const auto &logicalSize = getSize();
+    glViewport(0, 0, (int) logicalSize.x, (int) logicalSize.y);
+    (void) w;
+    (void) h;
 
-    // projection
-    auto projectionMatrix = glm::orthoLH(0.0f, (float) w, (float) h, 0.0f, 0.0f, 1.0f);
+    auto projectionMatrix = glm::orthoLH(0.0f, logicalSize.x, logicalSize.y, 0.0f, 0.0f, 1.0f);
     // view
     auto viewMatrix = glm::make_mat4(transform.getMatrix());
     // mpv

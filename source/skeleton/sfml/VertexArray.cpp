@@ -144,10 +144,16 @@ namespace c2d {
             GL_CHECK(glGenBuffers(1, &vbo));
         }
 
-        //printf("VertexArray::update(%p): vbo: %i, vertices: %lu, size: %lu\n",
-          //     this, vbo, m_vertices.size(), sizeof(Vertex) * m_vertices.size());
+        const GLsizeiptr size = sizeof(Vertex) * m_vertices.size();
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * m_vertices.size(), m_vertices.data(), GL_STREAM_DRAW));
+        if ((GLsizeiptr) uploadedSize == size) {
+            // geometry size unchanged (e.g. color-only updates of the
+            // highlight outline): update in place, no driver re-allocation
+            GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, size, m_vertices.data()));
+        } else {
+            GL_CHECK(glBufferData(GL_ARRAY_BUFFER, size, m_vertices.data(), GL_DYNAMIC_DRAW));
+            uploadedSize = size;
+        }
         GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, 0));
 #endif
     }

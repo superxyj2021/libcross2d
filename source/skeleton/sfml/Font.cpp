@@ -163,10 +163,9 @@ namespace c2d {
     const Glyph &Font::getGlyph(uint32_t codePoint, unsigned int characterSize,
                                 bool bold, float outlineThickness) const {
         // Get the page corresponding to the character size
-        GlyphTable &glyphs = m_pages[characterSize].glyphs;
-        if (m_pages[characterSize].texture != nullptr) {
-            m_pages[characterSize].texture->setFilter(m_filtering);
-        }
+        // (create it with the font filtering applied once, see Page ctor)
+        auto pageIt = m_pages.try_emplace(characterSize, m_filtering);
+        GlyphTable &glyphs = pageIt.first->second.glyphs;
 
         // Build the key by combining the code point, bold flag, and outline thickness
         uint64_t key = (static_cast<uint64_t>(*&outlineThickness) << 32)
@@ -342,13 +341,15 @@ namespace c2d {
 
 ////////////////////////////////////////////////////////////
     Texture *Font::getTexture(unsigned int characterSize) {
-        return m_pages[characterSize].texture;
+        return m_pages.try_emplace(characterSize, m_filtering).first->second.texture;
     }
 
     void Font::setFilter(Texture::Filter filter) {
         m_filtering = filter;
-        for (unsigned int i = 0; i < m_pages.size(); i++) {
-            m_pages[i].texture->setFilter(filter);
+        for (auto &entry: m_pages) {
+            if (entry.second.texture) {
+                entry.second.texture->setFilter(filter);
+            }
         }
     }
 
@@ -496,8 +497,8 @@ namespace c2d {
             height += 2 * padding;
 
             // Get the glyphs page corresponding to the character size
-            Page &page = m_pages[characterSize];
-            page.texture->setFilter(m_filtering);
+            // (create it with the font filtering applied once, see Page ctor)
+            Page &page = m_pages.try_emplace(characterSize, m_filtering).first->second;
 
             // Find a good position for the new glyph into the texture
             glyph.textureRect = findGlyphRect(page, width, height);
@@ -709,7 +710,7 @@ namespace c2d {
 
 ////////////////////////////////////////////////////////////
 
-    Font::Page::Page() : nextRow(3) {
+    Font::Page::Page(Texture::Filter filter) : nextRow(3) {
         //printf("Font:: create new tex\n");
         // Start the glyph atlas at 512x512 instead of 128x128: with large
         // Chinese fonts a rom list easily needs thousands of glyphs, and
@@ -717,6 +718,11 @@ namespace c2d {
         // Starting bigger means 512->1024->2048 (2 resizes) instead of
         // 128->...->2048 (5 resizes) during the first frame.
         texture = new C2DTexture({512, 512}, Texture::Format::RGBA8);
+
+        // apply the font filtering once at page creation, NOT on every
+        // getGlyph() lookup (that used to cost thousands of redundant
+        // glBindTexture/glTexParameteri calls per frame with CJK text)
+        texture->setFilter(filter);
 
         // Reserve a 2x2 white square for texturing underlines
         uint8_t *buffer;

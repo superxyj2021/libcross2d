@@ -278,7 +278,7 @@ namespace c2d {
         ///
         ////////////////////////////////////////////////////////////
         struct Page {
-            Page();
+            Page(Texture::Filter filter);
 
             ~Page();
 
