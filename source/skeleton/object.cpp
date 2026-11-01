@@ -49,7 +49,9 @@ bool C2DObject::onInput(Input::Player *players) {
 
 void C2DObject::onUpdate() {
     for (auto &child: childs) {
-        if (child) {
+        // skip hidden subtrees: their onUpdate (fps text, menu gradient,
+        // marquee scroll, emu loop...) has nothing to do while not drawn
+        if (child && child->visibility_current != Visibility::Hidden) {
             child->onUpdate();
         }
     }

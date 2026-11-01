@@ -94,8 +94,10 @@ int GLTexture::createTexture() {
 
 // TODO: handle pot textures
 int GLTexture::resize(const Vector2i &size, bool keepPixels) {
+#ifndef NDEBUG
     printf("GLTexture::resize: %ix%i > %ix%i\n",
            m_tex_size.x, m_tex_size.y, (int) size.x, (int) size.y);
+#endif
 
     if (size == m_tex_size) {
         printf("GLTexture::resize: size not changed, skipping...\n");

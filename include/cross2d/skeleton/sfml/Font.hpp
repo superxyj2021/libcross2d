@@ -31,6 +31,7 @@
 #include <deque>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "cross2d/skeleton/texture.h"
@@ -272,7 +273,7 @@ namespace c2d {
         ////////////////////////////////////////////////////////////
         // Types
         ////////////////////////////////////////////////////////////
-        typedef std::map<uint64_t, Glyph> GlyphTable; ///< Table mapping a codepoint to its glyph
+        typedef std::unordered_map<uint64_t, Glyph> GlyphTable; ///< Table mapping a codepoint to its glyph
 
         ////////////////////////////////////////////////////////////
         /// \brief Structure defining a page of glyphs

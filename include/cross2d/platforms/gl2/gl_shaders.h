@@ -5,6 +5,7 @@
 #ifndef GL_SHADERS_H
 #define GL_SHADERS_H
 
+#include <unordered_map>
 #include "cross2d/skeleton/shader_list.h"
 
 namespace c2d {
@@ -31,7 +32,10 @@ namespace c2d {
         GLuint GetProgram();
 
     private:
+        GLint getLocation(const GLchar *n);
+
         GLuint program = -1;
+        std::unordered_map<std::string, GLint> m_locations;
     };
 
     class GLShaderList : public ShaderList {

@@ -53,9 +53,11 @@ Texture::Texture(const std::string &p) : RectangleShape({0, 0}) {
     Texture::setFillColor(Color::White);
     Texture::setShader(0);
 
+#ifndef NDEBUG
     printf("Texture(%p): tex: %ix%i (pot: %ix%i, rect: %ix%i), bpp: %i, pitch: %i, path: %s\n",
            this, m_tex_size.x, m_tex_size.y, m_tex_size_pot.x, m_tex_size_pot.y,
            m_unlock_rect.width, m_unlock_rect.height, m_bpp, m_pitch, m_path.c_str());
+#endif
 }
 
 Texture::Texture(const unsigned char *buffer, int bufferSize) : RectangleShape({0, 0}) {
@@ -86,9 +88,11 @@ Texture::Texture(const unsigned char *buffer, int bufferSize) : RectangleShape({
     Texture::setFillColor(Color::White);
     Texture::setShader(0);
 
+#ifndef NDEBUG
     printf("Texture(%p): tex: %ix%i (pot: %ix%i, rect: %ix%i), bpp: %i, pitch: %i\n",
            this, m_tex_size.x, m_tex_size.y, m_tex_size_pot.x, m_tex_size_pot.y,
            m_unlock_rect.width, m_unlock_rect.height, m_bpp, m_pitch);
+#endif
 }
 
 Texture::Texture(const Vector2i &size, Format format) : RectangleShape(Vector2f{0, 0}) {
@@ -118,9 +122,11 @@ Texture::Texture(const Vector2i &size, Format format) : RectangleShape(Vector2f{
     Texture::setFillColor(Color::White);
     Texture::setShader(0);
 
+#ifndef NDEBUG
     printf("Texture(%p): tex: %ix%i (pot: %ix%i, rect: %ix%i), bpp: %i, pitch: %i\n",
            this, m_tex_size.x, m_tex_size.y, m_tex_size_pot.x, m_tex_size_pot.y,
            m_unlock_rect.width, m_unlock_rect.height, m_bpp, m_pitch);
+#endif
 }
 
 int Texture::lock(uint8_t **pixels, int *pitch, IntRect rect) {

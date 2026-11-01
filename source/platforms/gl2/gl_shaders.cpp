@@ -175,33 +175,42 @@ GLShader::GLShader(const std::string &n, const char *source, int size,
     available = true;
 }
 
-void GLShader::SetUniformMatrix(const GLchar *n, const GLfloat *v) {
+GLint GLShader::getLocation(const GLchar *n) {
+    // glGetUniformLocation is a driver-side string lookup; cache the result
+    // per uniform name (SetUniform* is called on every draw call)
+    auto it = m_locations.find(n);
+    if (it != m_locations.end()) {
+        return it->second;
+    }
     GLint loc;
     GL_CHECK(loc = glGetUniformLocation(program, n));
+    m_locations.emplace(n, loc);
+    return loc;
+}
+
+void GLShader::SetUniformMatrix(const GLchar *n, const GLfloat *v) {
+    GLint loc = getLocation(n);
     if (loc > -1) {
         GL_CHECK(glUniformMatrix4fv(loc, 1, GL_FALSE, v));
     }
 }
 
 void GLShader::SetUniform(const GLchar *n, const Vector2f &v) {
-    GLint loc;
-    GL_CHECK(loc = glGetUniformLocation(program, n));
+    GLint loc = getLocation(n);
     if (loc > -1) {
         GL_CHECK(glUniform2f(loc, v.x, v.y));
     }
 }
 
 void GLShader::SetUniform(const GLchar *n, const float v0, const float v1) {
-    GLint loc;
-    GL_CHECK(loc = glGetUniformLocation(program, n));
+    GLint loc = getLocation(n);
     if (loc > -1) {
         GL_CHECK(glUniform2f(loc, v0, v1));
     }
 }
 
 void GLShader::SetUniform(const GLchar *n, int v) {
-    GLint loc;
-    GL_CHECK(loc = glGetUniformLocation(program, n));
+    GLint loc = getLocation(n);
     if (loc > -1) {
         GL_CHECK(glUniform1i(loc, v));
     }
