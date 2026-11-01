@@ -35,10 +35,14 @@ void Audio::play(const void *data, int samples, SyncMode syncMode) {
         }
 
         if (syncMode == LowLatency) {
+            // getSampleBufferQueued() returns int16 sample count while
+            // getSamplesSize() returns bytes; comparing them mixes units and
+            // doubles the effective low-water mark (2 frames instead of 1),
+            // adding ~1 frame of audio/input latency.
             lock();
             int queued = getSampleBufferQueued();
             unlock();
-            while (queued >= getSamplesSize()) {
+            while (queued >= m_samples * channels) {
                 if (!available) return;
                 if (c2d_renderer) c2d_renderer->delayUs(1);
                 lock();
