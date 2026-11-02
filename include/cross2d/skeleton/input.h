@@ -119,10 +119,13 @@ namespace c2d {
 
         virtual void setKeyboardMapping(const std::vector<ButtonMapping> &mapping);
 
+        // raw (pre-mapping) state of one physical button id on a player's
+        // controller: SDL controller button id, or trigger axis + 100.
+        // used by the pfbneo per-key bindings (bypass the JOY mapping).
+        virtual int getButtonState(const Player &player, int button) { return false; };
+
     protected:
         virtual Vector2f getAxisState(const Player &player, int xAxis, int yAxis) { return {}; };
-
-        virtual int getButtonState(const Player &player, int button) { return false; };
 
         virtual int getKeyState(int key) { return false; };
 
