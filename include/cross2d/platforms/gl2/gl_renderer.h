@@ -29,6 +29,8 @@ namespace c2d {
 
         void onTextureDeleted(unsigned int texID) override;
 
+        void onTextureUnbound() override;
+
         unsigned int vao = 0;
 
     private:

@@ -188,6 +188,14 @@ void GLRenderer::onTextureDeleted(unsigned int texID) {
     }
 }
 
+void GLRenderer::onTextureUnbound() {
+    // a texture explicitly unbound itself (upload path in GLTexture): the
+    // cached "current texture" binding is now stale, so the next draw of the
+    // previously-bound texture must re-bind instead of skipping (otherwise it
+    // renders with no texture bound -> black screen).
+    m_currentTexture = 0;
+}
+
 void GLRenderer::flip(bool draw, bool inputs) {
     // call base class (draw childs)
     Renderer::flip(draw, inputs);

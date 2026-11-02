@@ -82,6 +82,11 @@ int GLTexture::createTexture() {
 
 #endif
     glBindTexture(GL_TEXTURE_2D, 0);
+    // unbinding invalidates the renderer's cached "current texture": a later
+    // draw of a previously-bound texture must re-bind instead of skipping
+    if (c2d_renderer) {
+        c2d_renderer->onTextureUnbound();
+    }
 
     // static textures don't need the CPU buffer anymore once uploaded
     if (!m_keepCpuBuffer) {
@@ -134,6 +139,9 @@ int GLTexture::resize(const Vector2i &size, bool keepPixels) {
     glTexImage2D(GL_TEXTURE_2D, 0, m_pixelFormat.internalFormat, size.x, size.y,
                  0, m_pixelFormat.format, m_pixelFormat.type, m_pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
+    if (c2d_renderer) {
+        c2d_renderer->onTextureUnbound();
+    }
 
     // update texture information
     m_pitch = dst_pitch;
@@ -171,6 +179,14 @@ void GLTexture::unlock(const uint8_t *pixels) {
                     m_pixelFormat.format, m_pixelFormat.type, data);
 
     glBindTexture(GL_TEXTURE_2D, 0);
+    // this unbind makes the renderer's cached "current texture" binding stale:
+    // the next draw of the same texture would skip glBindTexture and render
+    // with no texture bound (black screen). drop the cached id here, like the
+    // destructor does before glDeleteTextures. (previously masked while the
+    // status box - a texture-less draw - reset the cache every frame)
+    if (c2d_renderer) {
+        c2d_renderer->onTextureUnbound();
+    }
 
 #if !defined(GL_UNPACK_ROW_LENGTH)
     m_unlock_rect = rect;
@@ -183,6 +199,9 @@ void GLTexture::setFilter(Filter f) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, m_filter == Filter::Linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, m_filter == Filter::Linear ? GL_LINEAR : GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);
+    if (c2d_renderer) {
+        c2d_renderer->onTextureUnbound();
+    }
 }
 
 GLTexture::~GLTexture() {

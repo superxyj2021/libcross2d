@@ -49,6 +49,13 @@ namespace c2d {
         /// bind and render from a deleted texture (intermittent crashes).
         virtual void onTextureDeleted(unsigned int texID) { (void) texID; };
 
+        /// called when a texture is explicitly unbound outside a draw (e.g.
+        /// the upload path in GLTexture binds the texture, writes pixels, then
+        /// binds 0): cached implementations must forget the current texture
+        /// binding, otherwise the next draw of the same texture skips the bind
+        /// and renders with no texture bound (black screen).
+        virtual void onTextureUnbound() {};
+
         virtual void flip(bool draw = true, bool process_inputs = true);
 
         virtual void delay(unsigned int millis) {};

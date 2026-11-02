@@ -516,6 +516,14 @@ namespace c2d {
         if (!m_font || m_string.empty()) {
             return;
         }
+        // TEMP DEBUG: fps text draw diagnostics (page/vertex state)
+        static size_t s_lastPages = (size_t) -1;
+        if (m_string.rfind("FPS", 0) == 0 && m_textPages.size() != s_lastPages) {
+            s_lastPages = m_textPages.size();
+            printf("Text::onDraw(FPS): pages=%zu needUpdate=%d vcount=%zu\n",
+                   m_textPages.size(), (int) m_geometryNeedUpdate,
+                   m_textPages.empty() ? 0 : m_textPages[0].vertices.getVertexCount());
+        }
 
         if (draw) {
             Transform combined = transform * getTransform();
