@@ -13,6 +13,7 @@ extern const char *c2d_texture_shader;
 extern const char *c2d_crt_aperture_shader;     // scaling: integer | filter: point     |
 extern const char *c2d_crt_caligari_shader;     // scaling: integer | filter: point     |
 extern const char *c2d_crt_cgwg_fast_shader;    // scaling: integer | filter: point     |
+extern const char *c2d_crt_consumer_shader;     // scaling: integer | filter: linear    |
 extern const char *c2d_crt_easymode_shader;     // scaling: integer | filter: point     |
 extern const char *c2d_crt_fakelottes_shader;   // scaling: integer | filter: linear    |
 extern const char *c2d_crt_geom_shader;         // scaling: integer | filter: point     |
@@ -37,6 +38,7 @@ extern const char *c2d_handheld_zfast_lcd_shader;   // scaling: integer | filter
 
 // interpolation shaders
 extern const char *c2d_interpolation_aann_shader;                       // scaling: free    | filter: linear    |
+extern const char *c2d_interpolation_catmull_rom_shader;                // scaling: free    | filter: linear    |
 extern const char *c2d_interpolation_pixellate_shader;                  // scaling: free    | filter: point     |
 extern const char *c2d_interpolation_quilez_shader;                     // scaling: free    | filter: linear    |
 extern const char *c2d_interpolation_sharp_bilinear_shader;             // scaling: free    | filter: linear    |
@@ -57,6 +59,7 @@ const int c2d_texture_shader_length = 0;
 const int c2d_crt_aperture_shader_length = 0;
 const int c2d_crt_caligari_shader_length = 0;
 const int c2d_crt_cgwg_fast_shader_length = 0;
+const int c2d_crt_consumer_shader_length = 0;
 const int c2d_crt_easymode_shader_length = 0;
 const int c2d_crt_fakelottes_shader_length = 0;
 const int c2d_crt_geom_shader_length = 0;
@@ -76,6 +79,7 @@ const int c2d_handheld_lcd3x_shader_length = 0;
 const int c2d_handheld_retro_v2_shader_length = 0;
 const int c2d_handheld_zfast_lcd_shader_length = 0;
 const int c2d_interpolation_aann_shader_length = 0;
+const int c2d_interpolation_catmull_rom_shader_length = 0;
 const int c2d_interpolation_pixellate_shader_length = 0;
 const int c2d_interpolation_quilez_shader_length = 0;
 const int c2d_interpolation_sharp_bilinear_shader_length = 0;

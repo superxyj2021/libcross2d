@@ -331,6 +331,7 @@ GLShaderList::GLShaderList() : ShaderList() {
 #endif
 #endif //__PS4__
     add(new GLShader("crt-cgwg-fast", c2d_crt_cgwg_fast_shader, c2d_crt_cgwg_fast_shader_length, version));
+    add(new GLShader("crt-consumer", c2d_crt_consumer_shader, c2d_crt_consumer_shader_length, version));
     add(new GLShader("crt-easymode", c2d_crt_easymode_shader, c2d_crt_easymode_shader_length, version));
 #ifndef __PS4__
     add(new GLShader("crt-fakelottes", c2d_crt_fakelottes_shader, c2d_crt_fakelottes_shader_length, version));
@@ -364,6 +365,8 @@ GLShaderList::GLShaderList() : ShaderList() {
     // interpolation shaders
     add(new GLShader("interpolation-aann", c2d_interpolation_aann_shader,
                      c2d_interpolation_aann_shader_length, version));
+    add(new GLShader("interpolation-catmull-rom", c2d_interpolation_catmull_rom_shader,
+                     c2d_interpolation_catmull_rom_shader_length, version));
     add(new GLShader("interpolation-pixellate", c2d_interpolation_pixellate_shader,
                      c2d_interpolation_pixellate_shader_length, version));
     add(new GLShader("interpolation-quilez", c2d_interpolation_quilez_shader,
